@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>完全ナビマップ（案内修正版）</title>
+<title>Maps</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
 /* 共通レイアウト */
@@ -178,6 +178,9 @@ let startCoord=null, destCoord=null;
 let useGPS = true; 
 const speech=window.speechSynthesis;
 
+// ★追加: リルート実行中のフラグ
+let isRerouting = false;
+
 // 現在地補正
 function watchCurrentPosition(){
   if(navigator.geolocation){
@@ -275,9 +278,13 @@ async function startDemoNav(){
 
 // 共通ナビ
 async function startNav(start,end,isReal){
+  // ★修正: 既存のナビゲーション（インターバル）をクリア
+  if(navInterval) clearInterval(navInterval);
+
   document.getElementById('sidebar').style.display='none';
   document.getElementById('topbar').style.display='flex';
   
+  // 画面サイズ変更を通知
   setTimeout(() => map.invalidateSize(), 100);
 
   const mode=document.getElementById('mode').value;
@@ -290,7 +297,6 @@ async function startNav(start,end,isReal){
   routeCoords=[]; maneuvers=[];
   data.routes[0].legs[0].steps.forEach(step=>{
     const maneuverLoc = step.maneuver.location;
-    // ★修正: instructionに加え、typeとmodifierも保存
     maneuvers.push({
       loc:[maneuverLoc[1], maneuverLoc[0]], 
       instruction: step.maneuver.instruction,
@@ -317,12 +323,36 @@ async function startNav(start,end,isReal){
   let lastSpokenStep=null;
   let maneuverIndex = 0; 
 
-  navInterval=setInterval(()=>{
+  // ★修正: intervalのコールバックをasync(非同期)に変更
+  navInterval = setInterval(async () => {
     if (isReal) {
-        // リアルナビ中のロジック
-        const pos = startCoord;
-        if (!pos) return;
+        // ★★★ ここからリルート機能 ★★★
+        if (isRerouting) return; // リルート処理中はなにもしない
 
+        const pos = startCoord; // 現在のGPS位置
+        if (!pos || !routeCoords || routeCoords.length === 0) return;
+
+        const closestIdx = findClosestPointOnRoute(pos, routeCoords);
+        const closestPoint = routeCoords[closestIdx];
+        const distanceOffRoute = getDistance(pos, closestPoint);
+        
+        const rerouteTolerance = 75; // 75m以上離れたらリルート
+
+        if (distanceOffRoute > rerouteTolerance) {
+            isRerouting = true; // リルート開始フラグ
+            console.log(`ルートから ${distanceOffRoute.toFixed(0)}m 離れました。再検索します。`);
+            speak("ルートを外れました。再検索します。");
+            
+            // 現在地(startCoord)から目的地(destCoord)へのナビを再実行
+            await startNav(startCoord, destCoord, true); 
+            
+            isRerouting = false; // リルート完了フラグ
+            return; // 新しいインターバルに処理を任せる
+        }
+        // ★★★ リルート機能ここまで ★★★
+
+
+        // --- 既存のリアルナビ案内ロジック ---
         const nextManeuver = maneuvers[maneuverIndex];
         if (nextManeuver) {
             const distToManeuver = getDistance(pos, nextManeuver.loc); 
@@ -331,7 +361,6 @@ async function startNav(start,end,isReal){
                 `${Math.round(distToManeuver)} m` :
                 `${(distToManeuver / 1000).toFixed(1)} km`;
             
-            // ★修正: 自作関数で案内テキストを生成
             const instruction = getInstructionText(nextManeuver);
             document.getElementById('nav-next').innerText = `次: ${distStr} - ${instruction}`;
 
@@ -347,7 +376,6 @@ async function startNav(start,end,isReal){
             document.getElementById('nav-next').innerText = `まもなく到着`;
         }
 
-        let closestIdx = findClosestPointOnRoute(pos, routeCoords);
         const remainingDist = calculateRemainingDistance(closestIdx, routeCoords);
         document.getElementById('nav-remaining').innerText = `残り: ${remainingDist}`;
 
@@ -385,7 +413,6 @@ async function startNav(start,end,isReal){
             `${Math.round(distToManeuver)} m` :
             `${(distToManeuver / 1000).toFixed(1)} km`;
         
-        // ★修正: 自作関数で案内テキストを生成
         const instruction = getInstructionText(nextManeuver);
         document.getElementById('nav-next').innerText = `次: ${distStr} - ${instruction}`;
 
@@ -423,6 +450,7 @@ function stopNav(){
   document.getElementById('streetview').innerHTML = '';
   
   useGPS = true; 
+  isRerouting = false; // ★追加: リルートフラグをリセット
 }
 
 // 距離計算
@@ -460,23 +488,19 @@ function findClosestPointOnRoute(pos, coords) {
     return closestIdx;
 }
 
-// ★★★ 追加: OSRMのtypeとmodifierから日本語案内を生成する関数 ★★★
+// OSRMのtypeとmodifierから日本語案内を生成する関数
 function getInstructionText(maneuver) {
-  // 1. instructionが提供されていれば、それを最優先で使う
   if (maneuver.instruction && maneuver.instruction.length > 0) {
     return maneuver.instruction;
   }
-
-  // 2. instructionがない場合、typeとmodifierで自作する
   const type = maneuver.type;
   const modifier = maneuver.modifier;
-
   switch (type) {
     case 'depart':
       return '出発します';
     case 'turn':
     case 'new name':
-    case 'continue': // "continue" タイプもここで処理
+    case 'continue': 
       switch (modifier) {
         case 'left': return '左に曲がります';
         case 'right': return '右に曲がります';
@@ -485,18 +509,17 @@ function getInstructionText(maneuver) {
         case 'sharp left': return '大きく左に曲がります';
         case 'sharp right': return '大きく右に曲がります';
         case 'uturn': return 'Uターンします';
-        case 'straight': return '直進します'; // "continue"かつ"straight"の場合
-        default: return '道なりに進む'; // modifierがない "continue" の場合
+        case 'straight': return '直進します'; 
+        default: return '道なりに進む'; 
       }
     case 'roundabout':
       return 'ロータリーに入ります';
     case 'arrive':
       return '目的地に到着します';
     default:
-      return '道なりに進む'; // 不明なタイプ
+      return '道なりに進む'; 
   }
 }
-// ★★★ ここまで ★M
 
 // 音声
 function speak(text){
