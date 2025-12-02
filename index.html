@@ -113,7 +113,31 @@ input, select, button {
 }
 
 #info { font-size: 14px; }
-.triangle div { transform-origin: bottom center; }
+
+/* ★★★ 修正: 三角マーク（カーナビ風切り欠き）のスタイル ★★★ */
+/* .triangle は L.divIcon の className */
+.triangle div {
+  width: 0; 
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-bottom: 24px solid red; /* 三角形の本体 */
+  transform-origin: bottom center;
+  
+  /* clip-path で切り欠き（ノッチ）を作成 
+    Polygon(
+      50% 0% (頂点), 
+      100% 100% (右下), 
+      70% 100% (切り欠きの右側),
+      50% 70% (切り欠きの奥),
+      30% 100% (切り欠きの左側),
+      0% 100% (左下)
+    )
+  */
+  clip-path: polygon(50% 0%, 100% 100%, 70% 100%, 50% 70%, 30% 100%, 0% 100%);
+}
+/* ★★★ 修正ここまで ★★★ */
+
 
 #streetview {
   position: absolute; 
@@ -174,21 +198,23 @@ let baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
 let satLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{subdomains:['mt0','mt1','mt2','mt3']});
 let destMarker, routeLine, navMarker;
 let routeCoords=[], maneuvers=[], navIndex=0;
-let navInterval = null; // ★修正: nullで初期化
+let navInterval = null; 
 let startCoord=null, destCoord=null;
 let useGPS = true; 
 const speech=window.speechSynthesis;
 let isRerouting = false;
 
-// 現在地補正
+// ★★★ 修正: 現在地補正とマーカー回転 ★★★
 function watchCurrentPosition(){
   if(navigator.geolocation){
     navigator.geolocation.watchPosition(pos=>{
-      const latlng=[pos.coords.latitude,pos.coords.longitude];
+      const latlng=[pos.coords.latitude, pos.coords.longitude];
+      const heading = pos.coords.heading; // GPSから進行方向の角度を取得
       
       if(!navMarker) {
         navMarker = L.marker(latlng, {
-          icon: L.divIcon({className:'triangle', html:'<div style="width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:20px solid red;"></div>'}),
+          // ★修正: HTMLを <div></div> にし、CSSでスタイルを適用
+          icon: L.divIcon({className:'triangle', html:'<div></div>'}),
           rotationAngle: 0
         }).addTo(map);
         
@@ -198,7 +224,13 @@ function watchCurrentPosition(){
         }
       }
       
-      if(useGPS) navMarker.setLatLng(latlng);
+      if(useGPS) {
+        navMarker.setLatLng(latlng);
+        // ★修正: GPSの向き(heading)が取得できたらマーカーを回転
+        if (heading !== null && heading !== undefined) {
+          navMarker.setRotationAngle(heading);
+        }
+      }
       
       startCoord=latlng; 
     }, err=>console.warn("位置情報取得失敗:",err), {enableHighAccuracy:true, maximumAge:1000, timeout:5000});
@@ -206,28 +238,22 @@ function watchCurrentPosition(){
 }
 watchCurrentPosition(); 
 
-// ★★★ ここを修正: 現在地に戻る関数 ★★★
+// ★★★ 修正: 現在地に戻る関数 ★★★
 function recenterMap() {
-  if (startCoord) { // 1. GPS位置(startCoord)が取得済みか確認
-    map.setView(startCoord, 16); // 2. 地図をGPS位置に移動
-
+  if (startCoord) { 
+    map.setView(startCoord, 16); 
     if (navMarker) {
-      navMarker.setLatLng(startCoord); // 3. 三角マークも即座にGPS位置に移動
+      navMarker.setLatLng(startCoord); 
     }
-    
     if (navInterval) { 
-      // 4a. もしナビ（デモ走行またはリアルナビ）実行中なら
-      stopNav(); // ナビを停止し、サイドバーを表示する
+      stopNav(); 
     } else {
-      // 4b. ナビ中でない場合（サイドバー表示中）
-      useGPS = true; // GPS追従モードをONにする
+      useGPS = true; // GPS追従モードON
     }
-    
   } else {
     alert("現在地がまだ取得できていません。");
   }
 }
-// ★★★ 修正ここまで ★★★
 
 // ジオコーディング
 async function geocode(query){
@@ -262,12 +288,25 @@ function switchMapLayer(){
 function showStreetView(){
   if(!destCoord) return alert("目的地を先に検索してください");
   document.getElementById('streetview').style.display='block';
+  // Google ストリートビュー埋め込み (APIキーは不要な形式)
   document.getElementById('streetview').innerHTML=`<iframe width="100%" height="100%" frameborder="0" style="border:0"
-  src="http://googleusercontent.com/maps/google.com/1{destCoord[0]},${destCoord[1]}&heading=210&pitch=10&fov=90&key=YOUR_API_KEY" allowfullscreen></iframe>`;
+  src="https://www.google.com/maps/embed/v1/streetview?location=$${destCoord[0]},${destCoord[1]}&layer=c&cbll=${destCoord[0]},${destCoord[1]}&cbp=12,210,0,0,0" allowfullscreen></iframe>`;
+}
+
+
+// ★★★ 追加: スマホ用音声の初期化（「空の音」を再生） ★★★
+function primeSpeech() {
+  if (speech.speaking) return; 
+  speech.cancel(); 
+  const u = new SpeechSynthesisUtterance(' '); // 空白を再生
+  u.volume = 0; // 音量0
+  u.lang = 'ja-JP';
+  speech.speak(u);
 }
 
 // ナビ開始
 async function startNormalNav(){
+  primeSpeech(); // ★追加: 音声エンジンを初期化
   useGPS=true; 
   await searchDestination();
   const startAddr=document.getElementById('start').value;
@@ -276,22 +315,22 @@ async function startNormalNav(){
      alert("現在地が取得できていません。少し待つか出発地を入力してください。");
      return;
   }
-  await startNav(startCoord,destCoord,true); // ★修正: await を追加
+  await startNav(startCoord,destCoord,true); 
 }
 
 async function startDemoNav(){
+  primeSpeech(); // ★追加: 音声エンジンを初期化
   useGPS=false; 
   await searchDestination();
   const startAddr=document.getElementById('start').value;
   let start;
   if(startAddr){ const s=await geocode(startAddr); start=[s.lat,s.lng]; }
   else start=startCoord || [map.getCenter().lat,map.getCenter().lng]; 
-  await startNav(start,destCoord,false); // ★修正: await を追加
+  await startNav(start,destCoord,false); 
 }
 
 // 共通ナビ
 async function startNav(start,end,isReal){
-  // ★修正: 既存のナビゲーション（インターバル）を確実にクリア
   if(navInterval) clearInterval(navInterval);
   navInterval = null;
 
@@ -301,7 +340,8 @@ async function startNav(start,end,isReal){
   setTimeout(() => map.invalidateSize(), 100);
 
   const mode=document.getElementById('mode').value;
-  const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true`;
+  // ★修正: steps=true と intersections=true, destinations=true, exits=true を要求
+  const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true&intersections=true`;
   
   let data;
   try {
@@ -309,7 +349,7 @@ async function startNav(start,end,isReal){
     data=await res.json();
     if(!data.routes || data.routes.length===0){ 
       alert("ルートが取得できません"); 
-      stopNav(); // ★追加: ルート取得失敗時に停止
+      stopNav(); 
       return; 
     }
   } catch(err) {
@@ -321,12 +361,16 @@ async function startNav(start,end,isReal){
   routeCoords=[]; maneuvers=[];
   data.routes[0].legs[0].steps.forEach(step=>{
     const maneuverLoc = step.maneuver.location;
+    // ★★★ 修正: 案内生成に必要な情報をすべて保存 ★★★
     maneuvers.push({
       loc:[maneuverLoc[1], maneuverLoc[0]], 
-      instruction: step.maneuver.instruction,
       type: step.maneuver.type,
       modifier: step.maneuver.modifier,
-      distance: step.distance
+      name: step.name, // 道路名, 交差点名, IC/JCT/SA/PA名
+      destinations: step.destinations, // 方面案内
+      exits: step.exits, // 高速出口番号
+      // intersectionsから施設情報(例: 'toll_booth', 'service_area')を取得
+      classes: (step.intersections[0] && step.intersections[0].classes) ? step.intersections[0].classes : [] 
     });
     step.geometry.coordinates.forEach(c=>routeCoords.push([c[1],c[0]]));
   });
@@ -337,8 +381,9 @@ async function startNav(start,end,isReal){
   if(navMarker){
     navMarker.setLatLng(start);
   } else {
+     // ★修正: CSSでスタイルが適用されるよう <div></div> に
      navMarker=L.marker(start,{
-      icon:L.divIcon({className:'triangle', html:'<div style="width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:20px solid red;"></div>'}),
+      icon:L.divIcon({className:'triangle', html:'<div></div>'}),
       rotationAngle:0
     }).addTo(map);
   }
@@ -346,7 +391,7 @@ async function startNav(start,end,isReal){
   navIndex=0;
   let lastSpokenStep=null;
   let maneuverIndex = 0; 
-  isRerouting = false; // ★リルートフラグをリセット
+  isRerouting = false; 
 
   navInterval = setInterval(async () => {
     if (isReal) {
@@ -355,21 +400,16 @@ async function startNav(start,end,isReal){
         const pos = startCoord; 
         if (!pos || !routeCoords || routeCoords.length === 0) return;
 
+        // ルート逸脱判定
         const closestIdx = findClosestPointOnRoute(pos, routeCoords);
+        if (closestIdx === null) return; // ルートがない
         const closestPoint = routeCoords[closestIdx];
         const distanceOffRoute = getDistance(pos, closestPoint);
-        
-        const rerouteTolerance = 75; 
-
+        const rerouteTolerance = 75; // 75m
         if (distanceOffRoute > rerouteTolerance) {
             isRerouting = true; 
-            console.log(`ルートから ${distanceOffRoute.toFixed(0)}m 離れました。再検索します。`);
             speak("ルートを外れました。再検索します。");
-            
-            // ★重要: 現在地(startCoord)から目的地(destCoord)へのナビを再実行
             await startNav(startCoord, destCoord, true); 
-            
-            // isRerouting は startNav の最初で false になる
             return; 
         }
 
@@ -381,12 +421,15 @@ async function startNav(start,end,isReal){
                 `${Math.round(distToManeuver)} m` :
                 `${(distToManeuver / 1000).toFixed(1)} km`;
             
+            // ★修正: 高機能な案内テキスト生成
             const instruction = getInstructionText(nextManeuver);
             document.getElementById('nav-next').innerText = `次: ${distStr} - ${instruction}`;
 
+            // 案内実行 (デモより広い距離で反応)
             if (distToManeuver < 40) { 
                 if (lastSpokenStep !== nextManeuver && speech) {
                     const utter = new SpeechSynthesisUtterance(instruction);
+                    utter.lang = 'ja-JP';
                     speech.speak(utter);
                     lastSpokenStep = nextManeuver;
                 }
@@ -396,16 +439,15 @@ async function startNav(start,end,isReal){
             document.getElementById('nav-next').innerText = `まもなく到着`;
         }
 
+        // 残り距離と到着判定
         const remainingDist = calculateRemainingDistance(closestIdx, routeCoords);
         document.getElementById('nav-remaining').innerText = `残り: ${remainingDist}`;
-
         if (getDistance(pos, destCoord) < 50) { 
              stopNav();
              speak("目的地に到着しました");
              alert("目的地に到着しました");
              return;
         }
-
         return; 
     }
 
@@ -420,11 +462,15 @@ async function startNav(start,end,isReal){
     const pos=routeCoords[navIndex];
     const nextPos=routeCoords[Math.min(navIndex+1,routeCoords.length-1)];
     navMarker.setLatLng(pos); 
-    const angle=Math.atan2(nextPos[1]-pos[1],nextPos[0]-pos[0])*180/Math.PI + 90; 
+    
+    // ★★★ 修正: デモ走行時のマーカー回転 ★★★
+    // atan2(dLon, dLat) で進行方向の角度(0=北, 90=東)を計算
+    const angle = Math.atan2(nextPos[1] - pos[1], nextPos[0] - pos[0]) * 180 / Math.PI;
     navMarker.setRotationAngle(angle);
     
     if(!isReal) map.setView(pos, 17, {animate:true}); 
 
+    // デモ走行の案内
     const nextManeuver = maneuvers[maneuverIndex];
     if (nextManeuver) {
         const distToManeuver = getDistance(pos, nextManeuver.loc); 
@@ -432,12 +478,14 @@ async function startNav(start,end,isReal){
             `${Math.round(distToManeuver)} m` :
             `${(distToManeuver / 1000).toFixed(1)} km`;
         
+        // ★修正: 高機能な案内テキスト生成
         const instruction = getInstructionText(nextManeuver);
         document.getElementById('nav-next').innerText = `次: ${distStr} - ${instruction}`;
 
         if (distToManeuver < 20) { 
             if (lastSpokenStep !== nextManeuver && speech) {
                 const utter = new SpeechSynthesisUtterance(instruction);
+                utter.lang = 'ja-JP';
                 speech.speak(utter);
                 lastSpokenStep = nextManeuver;
             }
@@ -456,7 +504,6 @@ async function startNav(start,end,isReal){
 
 // 停止ボタン
 function stopNav(){
-  // ★修正: インターバルを確実に停止
   if(navInterval) clearInterval(navInterval);
   navInterval = null; 
 
@@ -495,9 +542,9 @@ function calculateRemainingDistance(idx,coords){
   else return `${(sum/1000).toFixed(1)} km`;
 }
 
-// リアルナビ用に、現在地に最も近いルート上のポイントを探す
+// ルート上の最寄り点を探す
 function findClosestPointOnRoute(pos, coords) {
-    if (!coords || coords.length === 0) return 0; 
+    if (!coords || coords.length === 0) return null; 
     let closestDist = Infinity;
     let closestIdx = 0;
     for (let i = 0; i < coords.length; i++) {
@@ -510,36 +557,104 @@ function findClosestPointOnRoute(pos, coords) {
     return closestIdx;
 }
 
-// OSRMのtypeとmodifierから日本語案内を生成する関数
+// ★★★ 修正: OSRM情報から高機能な日本語案内を生成する関数 ★★★
 function getInstructionText(maneuver) {
-  if (maneuver.instruction && maneuver.instruction.length > 0) {
-    return maneuver.instruction;
-  }
   const type = maneuver.type;
   const modifier = maneuver.modifier;
+  const name = maneuver.name || ''; // 道路/交差点/施設名
+  // 方面案内 (例: "東京,名古屋" -> "東京")
+  const destinations = (maneuver.destinations || '').split(',')[0]; 
+  const exits = maneuver.exits; // 出口番号 (例: "4A")
+  const classes = maneuver.classes || []; // 施設情報
+
+  // 1. 特殊施設（料金所、SA/PA）を最優先で判定
+  if (classes.includes('toll_booth')) {
+    return (name || '料金所') + ' です';
+  }
+  // OSRMはSA/PAを 'service' type で返すことがある
+  if (type === 'service') {
+     return (name || 'サービスエリア') + ' に入ります';
+  }
+  
+  // 2. OSRMの操舵タイプに基づいて案内を生成
   switch (type) {
     case 'depart':
       return '出発します';
-    case 'turn':
-    case 'new name':
-    case 'continue': 
-      switch (modifier) {
-        case 'left': return '左に曲がります';
-        case 'right': return '右に曲がります';
-        case 'slight left': return '斜め左に進みます';
-        case 'slight right': return '斜め右に進みます';
-        case 'sharp left': return '大きく左に曲がります';
-        case 'sharp right': return '大きく右に曲がります';
-        case 'uturn': return 'Uターンします';
-        case 'straight': return '直進します'; 
-        default: return '道なりに進む'; 
+
+    // 高速入口 (例: 小倉南ICから高速道路に入る)
+    case 'on ramp':
+      return (name || 'ランプ') + ' から高速道路に入ります';
+
+    // 高速出口 (例: 八幡ICで高速道路を降りる / 基山PAに入る)
+    case 'off ramp':
+      // SA/PA判定 (名前で判定)
+      if (name.toUpperCase().includes('PA') || name.toUpperCase().includes('SA')) {
+         return name + ' に入ります';
       }
+      let exitText = (exits ? ` (出口 ${exits})` : '');
+      return (destinations ? destinations + ' 方面、' : '') + (name || '出口') + exitText + ' で高速道路を降ります';
+
+    // 高速分岐 (例: 北九州JCTで分岐を左)
+    case 'fork':
+      return (name ? name + ' で ' : '') + (destinations ? destinations + ' 方面、' : '') + getDirectionText(modifier) + ' 方向です';
+
+    // 高速合流
+    case 'merge':
+       return (destinations ? destinations + ' 方面、' : '') + (name ? name + ' から ' : '') + '合流します';
+
+    // Uターン
+    case 'turn':
+      if (modifier === 'uturn') {
+        return 'Uターンします';
+      }
+      // 通常の交差点 (例: 天神を右方向)
+      if (name) {
+        return name + ' を ' + getDirectionText(modifier);
+      }
+      // 名前がない交差点 (例: 左へ曲がる)
+      return getDirectionText(modifier) + ' に曲がります';
+    
+    // 直進・道なり (交差点名がある場合など)
+    case 'new name':
+    case 'continue':
+      if (modifier === 'uturn') return 'Uターンします';
+      // 道路名が変わる場合（例: 〇〇通りに進む）
+      if (name && type === 'new name') {
+         return name + ' に入ります';
+      }
+      // 交差点名付きの直進
+      if (modifier === 'straight' && name) {
+        return name + ' を 直進します';
+      }
+      return '道なりに進む';
+
     case 'roundabout':
       return 'ロータリーに入ります';
+      
     case 'arrive':
       return '目的地に到着します';
+      
     default:
+      // その他の "turn" や "continue" で名前がない場合
+      if (modifier) {
+        return getDirectionText(modifier) + ' に曲がります';
+      }
       return '道なりに進む'; 
+  }
+}
+
+// ★★★ 追加: modifierを日本語の「方向」に変換するヘルパー関数 ★★★
+function getDirectionText(modifier) {
+  switch (modifier) {
+    case 'left': return '左';
+    case 'right': return '右';
+    case 'slight left': return '斜め左';
+    case 'slight right': return '斜め右';
+    case 'sharp left': return '大きく左';
+    case 'sharp right': return '大きく右';
+    case 'straight': return '直進';
+    case 'uturn': return 'Uターン';
+    default: return '道なり';
   }
 }
 
@@ -547,7 +662,7 @@ function getInstructionText(maneuver) {
 function speak(text){
   if(speech.speaking) speech.cancel();
   const u=new SpeechSynthesisUtterance(text);
-  u.lang = 'ja-JP'; 
+  u.lang = 'ja-JP'; // 言語を日本語に指定
   speech.speak(u);
 }
 </script>
