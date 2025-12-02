@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Maps</title>
+<title>マップ</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
 /* 共通レイアウト */
@@ -173,12 +173,11 @@ let map = L.map('map',{zoomControl:true}).setView([35.68,139.76], 13);
 let baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'©OSM'}).addTo(map);
 let satLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{subdomains:['mt0','mt1','mt2','mt3']});
 let destMarker, routeLine, navMarker;
-let routeCoords=[], maneuvers=[], navIndex=0, navInterval;
+let routeCoords=[], maneuvers=[], navIndex=0;
+let navInterval = null; // ★修正: nullで初期化
 let startCoord=null, destCoord=null;
 let useGPS = true; 
 const speech=window.speechSynthesis;
-
-// ★追加: リルート実行中のフラグ
 let isRerouting = false;
 
 // 現在地補正
@@ -207,14 +206,28 @@ function watchCurrentPosition(){
 }
 watchCurrentPosition(); 
 
-// 現在地に戻る関数
+// ★★★ ここを修正: 現在地に戻る関数 ★★★
 function recenterMap() {
-  if (startCoord) { 
-    map.setView(startCoord, 16); 
+  if (startCoord) { // 1. GPS位置(startCoord)が取得済みか確認
+    map.setView(startCoord, 16); // 2. 地図をGPS位置に移動
+
+    if (navMarker) {
+      navMarker.setLatLng(startCoord); // 3. 三角マークも即座にGPS位置に移動
+    }
+    
+    if (navInterval) { 
+      // 4a. もしナビ（デモ走行またはリアルナビ）実行中なら
+      stopNav(); // ナビを停止し、サイドバーを表示する
+    } else {
+      // 4b. ナビ中でない場合（サイドバー表示中）
+      useGPS = true; // GPS追従モードをONにする
+    }
+    
   } else {
     alert("現在地がまだ取得できていません。");
   }
 }
+// ★★★ 修正ここまで ★★★
 
 // ジオコーディング
 async function geocode(query){
@@ -263,7 +276,7 @@ async function startNormalNav(){
      alert("現在地が取得できていません。少し待つか出発地を入力してください。");
      return;
   }
-  startNav(startCoord,destCoord,true);
+  await startNav(startCoord,destCoord,true); // ★修正: await を追加
 }
 
 async function startDemoNav(){
@@ -273,26 +286,37 @@ async function startDemoNav(){
   let start;
   if(startAddr){ const s=await geocode(startAddr); start=[s.lat,s.lng]; }
   else start=startCoord || [map.getCenter().lat,map.getCenter().lng]; 
-  startNav(start,destCoord,false);
+  await startNav(start,destCoord,false); // ★修正: await を追加
 }
 
 // 共通ナビ
 async function startNav(start,end,isReal){
-  // ★修正: 既存のナビゲーション（インターバル）をクリア
+  // ★修正: 既存のナビゲーション（インターバル）を確実にクリア
   if(navInterval) clearInterval(navInterval);
+  navInterval = null;
 
   document.getElementById('sidebar').style.display='none';
   document.getElementById('topbar').style.display='flex';
   
-  // 画面サイズ変更を通知
   setTimeout(() => map.invalidateSize(), 100);
 
   const mode=document.getElementById('mode').value;
   const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true`;
-
-  const res=await fetch(url);
-  const data=await res.json();
-  if(!data.routes || data.routes.length===0){ alert("ルートが取得できません"); return; }
+  
+  let data;
+  try {
+    const res=await fetch(url);
+    data=await res.json();
+    if(!data.routes || data.routes.length===0){ 
+      alert("ルートが取得できません"); 
+      stopNav(); // ★追加: ルート取得失敗時に停止
+      return; 
+    }
+  } catch(err) {
+    alert("ルート検索サーバーに接続できませんでした。");
+    stopNav();
+    return;
+  }
 
   routeCoords=[]; maneuvers=[];
   data.routes[0].legs[0].steps.forEach(step=>{
@@ -322,41 +346,37 @@ async function startNav(start,end,isReal){
   navIndex=0;
   let lastSpokenStep=null;
   let maneuverIndex = 0; 
+  isRerouting = false; // ★リルートフラグをリセット
 
-  // ★修正: intervalのコールバックをasync(非同期)に変更
   navInterval = setInterval(async () => {
     if (isReal) {
-        // ★★★ ここからリルート機能 ★★★
-        if (isRerouting) return; // リルート処理中はなにもしない
-
-        const pos = startCoord; // 現在のGPS位置
+        // --- リアルナビ＆リルート ---
+        if (isRerouting) return; 
+        const pos = startCoord; 
         if (!pos || !routeCoords || routeCoords.length === 0) return;
 
         const closestIdx = findClosestPointOnRoute(pos, routeCoords);
         const closestPoint = routeCoords[closestIdx];
         const distanceOffRoute = getDistance(pos, closestPoint);
         
-        const rerouteTolerance = 75; // 75m以上離れたらリルート
+        const rerouteTolerance = 75; 
 
         if (distanceOffRoute > rerouteTolerance) {
-            isRerouting = true; // リルート開始フラグ
+            isRerouting = true; 
             console.log(`ルートから ${distanceOffRoute.toFixed(0)}m 離れました。再検索します。`);
             speak("ルートを外れました。再検索します。");
             
-            // 現在地(startCoord)から目的地(destCoord)へのナビを再実行
+            // ★重要: 現在地(startCoord)から目的地(destCoord)へのナビを再実行
             await startNav(startCoord, destCoord, true); 
             
-            isRerouting = false; // リルート完了フラグ
-            return; // 新しいインターバルに処理を任せる
+            // isRerouting は startNav の最初で false になる
+            return; 
         }
-        // ★★★ リルート機能ここまで ★★★
 
-
-        // --- 既存のリアルナビ案内ロジック ---
+        // --- リアルナビ案内ロジック ---
         const nextManeuver = maneuvers[maneuverIndex];
         if (nextManeuver) {
             const distToManeuver = getDistance(pos, nextManeuver.loc); 
-
             const distStr = distToManeuver < 1000 ?
                 `${Math.round(distToManeuver)} m` :
                 `${(distToManeuver / 1000).toFixed(1)} km`;
@@ -408,7 +428,6 @@ async function startNav(start,end,isReal){
     const nextManeuver = maneuvers[maneuverIndex];
     if (nextManeuver) {
         const distToManeuver = getDistance(pos, nextManeuver.loc); 
-
         const distStr = distToManeuver < 1000 ?
             `${Math.round(distToManeuver)} m` :
             `${(distToManeuver / 1000).toFixed(1)} km`;
@@ -437,7 +456,10 @@ async function startNav(start,end,isReal){
 
 // 停止ボタン
 function stopNav(){
-  clearInterval(navInterval);
+  // ★修正: インターバルを確実に停止
+  if(navInterval) clearInterval(navInterval);
+  navInterval = null; 
+
   document.getElementById('sidebar').style.display='block';
   document.getElementById('topbar').style.display='none';
   
@@ -450,7 +472,7 @@ function stopNav(){
   document.getElementById('streetview').innerHTML = '';
   
   useGPS = true; 
-  isRerouting = false; // ★追加: リルートフラグをリセット
+  isRerouting = false; 
 }
 
 // 距離計算
