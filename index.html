@@ -3,103 +3,163 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>完全ナビマップ（デザイン修正版）</title>
+<title>マップ</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
-html, body {height:100%; margin:0; font-family:sans-serif;}
-#map {height:100%; width:100%;}
-#sidebar {
-  position:absolute; left:0; top:0; width:300px; max-width:80%; height:100%;
-  background:#f9f9f9; padding:10px; box-shadow:2px 0 5px rgba(0,0,0,0.3); overflow-y:auto; z-index:1000;
+/* 共通レイアウト */
+html { height: 100%; }
+body {
+  height: 100vh; 
+  margin: 0; 
+  font-family: sans-serif;
+  display: flex; 
 }
-input, select, button {width:100%; margin-bottom:10px; padding:8px; font-size:16px;}
+#sidebar {
+  width: 300px; 
+  max-width: 80%;
+  height: 100%;
+  background: #f9f9f9;
+  padding: 10px;
+  box-shadow: 2px 0 5px rgba(0,0,0,0.3);
+  overflow-y: auto;
+  z-index: 1000;
+  box-sizing: border-box; 
+}
+#map-container {
+  flex: 1; 
+  height: 100%;
+  position: relative; 
+}
+#map {
+  height: 100%;
+  width: 100%;
+}
 
-/* ★★★ ここからGoogle Map風デザインに変更 ★★★ */
+/* ★★★ ここからトップバーを緑色に戻す ★★★ */
 #topbar {
-  position:absolute; 
-  top:10px; 
-  left:10px; /* 左端に寄せる */
-  right:10px; 
-  height:auto; 
-  background: #ffffff; /* 白い背景 */
-  color: #222; /* 暗い色のテキスト */
-  display:none; /* 最初は非表示 */
-  flex-direction: column; /* 要素を縦に並べる */
-  align-items: flex-start; /* 左揃え */
-  justify-content: center; 
+  position: absolute; 
+  top: 10px;
+  left: 10px; 
+  right: 10px; 
+  height: auto; 
+  background: green; /* 背景を緑に */
+  color: white; /* 文字を白に */
+  display: none; 
+  flex-direction: row; /* 横並びに戻す */
+  align-items: center; /* 垂直中央揃え */
+  justify-content: space-between; /* 両端揃え */
   padding: 10px 15px; 
-  box-sizing:border-box; 
-  z-index:1000;
-  border-radius: 8px; /* 角を丸く */
-  box-shadow: 0 2px 8px rgba(0,0,0,0.3); /* カード風の影 */
+  box-sizing: border-box; 
+  z-index: 1000; 
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  flex-wrap: wrap; /* 画面が狭い時に折り返す */
 }
 /* メインの案内（次の曲がり角） */
 #topbar span#nav-next {
-  font-size: 24px; /* 文字を大きく */
+  font-size: 20px; /* Google Map風より少し小さく */
   font-weight: bold;
-  flex-basis: auto;
-  margin-bottom: 5px;
-  padding-right: 50px; /* ボタンと重ならないよう右に余白 */
 }
 /* サブの案内（残り距離） */
 #topbar span#nav-remaining {
-  font-size: 16px; /* 少し小さく */
+  font-size: 16px; 
   font-weight: normal;
-  color: #555; /* 少し薄い色 */
-  flex-basis: auto;
+  color: #f0f0f0; /* 少し薄い白 */
 }
 /* 停止ボタン */
 #topbar button { 
-  position: absolute; /* カード内の右上に配置 */
-  top: 8px;
-  right: 8px;
-  background: #f44336; /* 赤い停止ボタン */
+  position: static; /* 配置を元に戻す */
+  background: #f44336; 
   color: white; 
   border: none; 
-  padding: 5px 10px; /* サイズ調整 */
+  padding: 5px 10px; 
   font-size: 14px;  
   font-weight: bold;
-  cursor:pointer; border-radius: 5px; 
-  width: auto; /* 幅を自動に */
+  cursor: pointer; 
+  border-radius: 5px; 
+  width: auto; 
   margin-bottom: 0;
 }
-/* ★★★ デザイン変更ここまで ★★★ */
+/* ★★★ トップバーのスタイルここまで ★★★ */
 
-#info { font-size:14px; }
-.triangle div {transform-origin: bottom center;}
-#streetview {position:absolute; top:0; left:0; width:100%; height:100%; display:none; z-index:2000;}
+
+/* ★★★ 追加: 現在地に戻るボタン ★★★ */
+#recenter-btn {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  font-size: 24px;
+  border-radius: 50%; /* 円形 */
+  border: none;
+  background-color: white;
+  color: #333;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  cursor: pointer;
+  z-index: 900; /* マップより上、トップバーより下 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#recenter-btn:hover {
+  background-color: #f4f4f4;
+}
+/* ★★★ 現在地ボタンここまで ★★★ */
+
+
+#info { font-size: 14px; }
+.triangle div { transform-origin: bottom center; }
+
+#streetview {
+  position: absolute; 
+  top: 0; 
+  left: 0; 
+  width: 100%; 
+  height: 100%; 
+  display: none; 
+  z-index: 2000; 
+}
 </style>
 </head>
 <body>
 
 <div id="sidebar">
-<h3>ルート検索</h3>
-<input type="text" id="start" placeholder="出発地（空欄で現在地）">
-<input type="text" id="end" placeholder="目的地">
-<select id="mode">
-  <option value="driving">車</option>
-  <option value="walking">徒歩</option>
-  <option value="cycling">自転車</option>
-</select>
-<select id="maptype">
-  <option value="street">標準地図</option>
-  <option value="satellite">航空写真</option>
-</select>
-<button onclick="switchMapLayer()">マップ切替</button>
-<button onclick="startNormalNav()">通常ナビ開始</button>
-<button onclick="startDemoNav()">デモ走行開始</button>
-<button onclick="showStreetView()">ストリートビュー</button>
-<div id="info"></div>
+  <h3>ルート検索</h3>
+  <input type="text" id="start" placeholder="出発地（空欄で現在地）">
+  <input type="text" id="end" placeholder="目的地">
+  <select id="mode">
+    <option value="driving">車</option>
+    <option value="walking">徒歩</option>
+    <option value="cycling">自転車</option>
+  </select>
+  <select id="maptype">
+    <option value="street">標準地図</option>
+    <option value="satellite">航空写真</option>
+  </select>
+  <button onclick="switchMapLayer()">マップ切替</button>
+  <button onclick="startNormalNav()">通常ナビ開始</button>
+  <button onclick="startDemoNav()">デモ走行開始</button>
+  <button onclick="showStreetView()">ストリートビュー</button>
+  <div id="info"></div>
 </div>
 
-<div id="topbar">
-<span id="nav-next">次の曲がり角: -</span>
-<span id="nav-remaining">残り: -</span>
-<button onclick="stopNav()">停止</button>
+<div id="map-container">
+  <div id="topbar">
+    <div>
+      <span id="nav-next">次の曲がり角: -</span><br>
+      <span id="nav-remaining">残り: -</span>
+    </div>
+    <button onclick="stopNav()">停止</button>
+  </div>
+  
+  <div id="map"></div>
+  
+  <button id="recenter-btn" onclick="recenterMap()">📍</button>
+  
+  <div id="streetview"></div>
 </div>
 
-<div id="map"></div>
-<div id="streetview"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/master/leaflet.rotatedMarker.js"></script>
@@ -111,8 +171,6 @@ let satLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
 let destMarker, routeLine, navMarker;
 let routeCoords=[], maneuvers=[], navIndex=0, navInterval;
 let startCoord=null, destCoord=null;
-
-// ★修正: useGPSを最初からtrueにし、マーカーが常にGPSを追うようにする
 let useGPS = true; 
 const speech=window.speechSynthesis;
 
@@ -121,28 +179,38 @@ function watchCurrentPosition(){
   if(navigator.geolocation){
     navigator.geolocation.watchPosition(pos=>{
       const latlng=[pos.coords.latitude,pos.coords.longitude];
-      
-      // ★修正: マーカーがまだ存在しない場合、ここで作成する
+      
       if(!navMarker) {
         navMarker = L.marker(latlng, {
           icon: L.divIcon({className:'triangle', html:'<div style="width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:20px solid red;"></div>'}),
           rotationAngle: 0
         }).addTo(map);
         
-        // 最初のGPS取得時に地図を中央に
+        // ★修正: 最初のGPS取得時にstartCoordにもセット
         if(!startCoord) {
             map.setView(latlng, 16);
+            startCoord = latlng; // startCoordを初期化
         }
       }
       
-      // useGPSフラグがtrueの場合のみ、マーカー位置をGPSに同期
       if(useGPS) navMarker.setLatLng(latlng);
       
-      if(!startCoord) startCoord=latlng; // 出発地未設定時のために保持
+      // ★修正: startCoordを常に最新のGPS位置に更新
+      startCoord=latlng; 
     }, err=>console.warn("位置情報取得失敗:",err), {enableHighAccuracy:true, maximumAge:1000, timeout:5000});
   }
 }
-watchCurrentPosition(); // ページ読み込みと同時に実行
+watchCurrentPosition(); 
+
+// ★★★ 追加: 現在地に戻る関数 ★★★
+function recenterMap() {
+  if (startCoord) { // startCoord（GPSの最新位置）が存在すれば
+    map.setView(startCoord, 16); // そこにズーム
+  } else {
+    alert("現在地がまだ取得できていません。");
+  }
+}
+// ★★★ ここまで ★★★
 
 // ジオコーディング
 async function geocode(query){
@@ -177,32 +245,30 @@ function switchMapLayer(){
 function showStreetView(){
   if(!destCoord) return alert("目的地を先に検索してください");
   document.getElementById('streetview').style.display='block';
-  // Google Maps Embed API の形式 (APIキーが必要)
   document.getElementById('streetview').innerHTML=`<iframe width="100%" height="100%" frameborder="0" style="border:0"
-  src="https://www.google.com/maps/embed/v1/streetview?location=${destCoord[0]},${destCoord[1]}&heading=210&pitch=10&fov=90&key=YOUR_API_KEY" allowfullscreen></iframe>`;
+  src="http://googleusercontent.com/maps/google.com/1{destCoord[0]},${destCoord[1]}&heading=210&pitch=10&fov=90&key=YOUR_API_KEY" allowfullscreen></iframe>`;
 }
 
 // ナビ開始
 async function startNormalNav(){
-  useGPS=true; // GPSモード（デフォルトだが明示）
+  useGPS=true; 
   await searchDestination();
   const startAddr=document.getElementById('start').value;
   if(startAddr){ const s=await geocode(startAddr); startCoord=[s.lat,s.lng]; }
-  else if (!startCoord) { // GPSがまだ取得できていない場合
+  else if (!startCoord) { 
      alert("現在地が取得できていません。少し待つか出発地を入力してください。");
      return;
   }
-  // startCoordはwatchPositionまたはジオコードで設定されたものを使う
   startNav(startCoord,destCoord,true);
 }
 
 async function startDemoNav(){
-  useGPS=false; // ★デモモード中はGPS追従を停止
+  useGPS=false; 
   await searchDestination();
   const startAddr=document.getElementById('start').value;
   let start;
   if(startAddr){ const s=await geocode(startAddr); start=[s.lat,s.lng]; }
-  else start=startCoord || [map.getCenter().lat,map.getCenter().lng]; // GPSか地図中心
+  else start=startCoord || [map.getCenter().lat,map.getCenter().lng]; 
   startNav(start,destCoord,false);
 }
 
@@ -210,8 +276,11 @@ async function startDemoNav(){
 async function startNav(start,end,isReal){
   document.getElementById('sidebar').style.display='none';
   document.getElementById('topbar').style.display='flex';
+  
+  setTimeout(() => map.invalidateSize(), 100);
+
   const mode=document.getElementById('mode').value;
-  const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true`;
+  const url=`https://router.project-OSRM.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true`;
 
   const res=await fetch(url);
   const data=await res.json();
@@ -221,7 +290,7 @@ async function startNav(start,end,isReal){
   data.routes[0].legs[0].steps.forEach(step=>{
     const maneuverLoc = step.maneuver.location;
     maneuvers.push({
-      loc:[maneuverLoc[1], maneuverLoc[0]], // [lat, lng] 形式
+      loc:[maneuverLoc[1], maneuverLoc[0]], 
       instruction:step.maneuver.instruction,
       distance:step.distance
     });
@@ -231,11 +300,9 @@ async function startNav(start,end,isReal){
   if(routeLine) map.removeLayer(routeLine);
   routeLine=L.polyline(routeCoords,{color:'blue',weight:6}).addTo(map);
 
-  // マーカーが（GPSで）作成済みのはずなので、位置をルート開始地点にセット
   if(navMarker){
     navMarker.setLatLng(start);
   } else {
-    // （万が一GPSがまだ取れてない場合）ここで作成
      navMarker=L.marker(start,{
       icon:L.divIcon({className:'triangle', html:'<div style="width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:20px solid red;"></div>'}),
       rotationAngle:0
@@ -247,17 +314,54 @@ async function startNav(start,end,isReal){
   let maneuverIndex = 0; 
 
   navInterval=setInterval(()=>{
-    // リアルモード(GPS)の場合、navIndex(座標)は進めない
     if (isReal) {
-        // ※リアルナビのロジック（ルート逸脱判定など）は
-        // 現在地(navMarker.getLatLng())とmaneuvers[maneuverIndex]の
-        // 距離を計算する処理をここに追加する必要があります。
-        // 今回はデモ走行の修正がメインのため、ここは空にしておきます。
-        return; 
+        // リアルナビ中のロジック（GPS位置とルートを比較）
+        // 現在地は startCoord に入っている
+        const pos = startCoord;
+        if (!pos) return;
+
+        // ★リアルナビ用の案内ロジック (デモ走行のロジックを流用)
+        const nextManeuver = maneuvers[maneuverIndex];
+        if (nextManeuver) {
+            const distToManeuver = getDistance(pos, nextManeuver.loc); 
+
+            const distStr = distToManeuver < 1000 ?
+                `${Math.round(distToManeuver)} m` :
+                `${(distToManeuver / 1000).toFixed(1)} km`;
+            
+            document.getElementById('nav-next').innerText = `次: ${distStr} - ${nextManeuver.instruction}`;
+
+            // 40m以内に近づいたら案内（デモより広め）
+            if (distToManeuver < 40) { 
+                if (lastSpokenStep !== nextManeuver && speech) {
+                    const utter = new SpeechSynthesisUtterance(nextManeuver.instruction);
+                    speech.speak(utter);
+                    lastSpokenStep = nextManeuver;
+                }
+                maneuverIndex++; 
+            }
+        } else {
+            document.getElementById('nav-next').innerText = `まもなく到着`;
+        }
+
+        // ★リアルナビ用の残り距離 (デモのものを流用するが、現在地から計算する方が正確)
+        // 簡易的に、デモ走行のインデックスをGPS位置に最も近い座標に合わせる
+        let closestIdx = findClosestPointOnRoute(pos, routeCoords);
+        const remainingDist = calculateRemainingDistance(closestIdx, routeCoords);
+        document.getElementById('nav-remaining').innerText = `残り: ${remainingDist}`;
+
+        // 目的地到着判定
+        if (getDistance(pos, destCoord) < 50) { // 50m以内
+             stopNav();
+             speak("目的地に到着しました");
+             alert("目的地に到着しました");
+             return;
+        }
+
+        return; // デモ走行の navIndex++ は行わない
     }
 
-    // --- ここからデモ走行のロジック ---
-
+    // --- デモ走行ロジック ---
     if(navIndex>=routeCoords.length){
       stopNav();
       speak("目的地に到着しました");
@@ -267,14 +371,12 @@ async function startNav(start,end,isReal){
 
     const pos=routeCoords[navIndex];
     const nextPos=routeCoords[Math.min(navIndex+1,routeCoords.length-1)];
-    navMarker.setLatLng(pos); // デモ中はマーカーを強制移動
+    navMarker.setLatLng(pos); 
     const angle=Math.atan2(nextPos[1]-pos[1],nextPos[0]-pos[0])*180/Math.PI + 90; 
     navMarker.setRotationAngle(angle);
     
     if(!isReal) map.setView(pos, 17, {animate:true}); 
 
-    
-    // 次の曲がり角案内
     const nextManeuver = maneuvers[maneuverIndex];
     if (nextManeuver) {
         const distToManeuver = getDistance(pos, nextManeuver.loc); 
@@ -297,12 +399,11 @@ async function startNav(start,end,isReal){
         document.getElementById('nav-next').innerText = `まもなく到着`;
     }
 
-    // 残り距離
     const remainingDist=calculateRemainingDistance(navIndex,routeCoords);
     document.getElementById('nav-remaining').innerText=`残り: ${remainingDist}`;
 
     navIndex++;
-  }, 500); 
+  }, 500); // リアルナビの場合、この間隔は案内更新頻度になる
 }
 
 // 停止ボタン
@@ -310,16 +411,19 @@ function stopNav(){
   clearInterval(navInterval);
   document.getElementById('sidebar').style.display='block';
   document.getElementById('topbar').style.display='none';
+  
+  setTimeout(() => map.invalidateSize(), 100);
+
   if(routeLine) map.removeLayer(routeLine);
   routeLine=null;
   routeCoords=[]; maneuvers=[]; navIndex=0;
   document.getElementById('streetview').style.display='none';
   document.getElementById('streetview').innerHTML = '';
   
-  useGPS = true; // ★修正: ナビ終了時にGPS追従モードに復帰
+  useGPS = true; 
 }
 
-// 距離計算 (Haversine formula)
+// 距離計算
 function getDistance(a,b){
   const R=6371000; // メートル
   const dLat=(b[0]-a[0])*Math.PI/180;
@@ -339,6 +443,21 @@ function calculateRemainingDistance(idx,coords){
   else return `${(sum/1000).toFixed(1)} km`;
 }
 
+// ★追加: リアルナビ用に、現在地に最も近いルート上のポイントを探す
+function findClosestPointOnRoute(pos, coords) {
+    let closestDist = Infinity;
+    let closestIdx = 0;
+    for (let i = 0; i < coords.length; i++) {
+        const dist = getDistance(pos, coords[i]);
+        if (dist < closestDist) {
+            closestDist = dist;
+            closestIdx = i;
+        }
+    }
+    return closestIdx;
+}
+
+// 音声
 function speak(text){
   if(speech.speaking) speech.cancel();
   const u=new SpeechSynthesisUtterance(text);
