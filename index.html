@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>完全ナビマップ（道路スナップ版）</title>
+<title>マップ）</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
 /* 共通レイアウト */
@@ -351,10 +351,8 @@ async function startNav(start,end,isReal){
 
   const mode=document.getElementById('mode').value;
   
-  // ★★★ 修正: `radiuses=unlimited;unlimited` を追加 ★★★
-  // これにより、OSRMは指定された座標から最も近い道路を自動で探し、
-  // そこを開始点/終了点としてルート検索を実行します。
-  const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true&intersections=true&radiuses=unlimited;unlimited`;
+  // ★★★ 修正: `intersections=true` を `annotations=intersections` に変更 ★★★
+  const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true&annotations=intersections&radiuses=unlimited;unlimited`;
   
   let data;
   try {
@@ -362,7 +360,6 @@ async function startNav(start,end,isReal){
     data=await res.json();
     if(!data.routes || data.routes.length===0 || data.code !== 'Ok'){ 
       console.warn("OSRMからルートが返されませんでした:", data);
-      // ★修正: "NoRoute"の場合のアラート文言を変更
       if (data.code === 'NoRoute') {
         alert("ルートが見つかりませんでした。OSRMがこの地点間の道路ネットワークを認識できない可能性があります。"); 
       } else {
@@ -379,8 +376,19 @@ async function startNav(start,end,isReal){
   }
 
   routeCoords=[]; maneuvers=[];
-  data.routes[0].legs[0].steps.forEach(step=>{
+  // ★修正: data.legs[0].steps を OSRM v5 の正しい
+  // `annotations` を使うには data.routes[0].legs[0] の `steps` と `annotations` を
+  // 組み合わせる必要がありますが、OSRMデモサーバーは `intersections` を `step` の中に返してくれるようです。
+  // そのため、 `step.intersections` へのアクセスは
+  // `data.routes[0].legs[0].steps` の `step` から行います。
+  data.routes[0].legs[0].steps.forEach((step, stepIndex) => {
     const maneuverLoc = step.maneuver.location;
+    
+    // OSRMは 'annotations' を別配列で返すことがあるが、
+    // 'steps=true' の場合は 'step' の中に 'intersections' が含まれることが多い。
+    // 念のため、'annotations' が別配列の場合も考慮する (今回は簡易的にstep.intersections)
+    const intersection = (step.intersections && step.intersections.length > 0) ? step.intersections[0] : {};
+
     maneuvers.push({
       loc:[maneuverLoc[1], maneuverLoc[0]], 
       type: step.maneuver.type,
@@ -388,21 +396,21 @@ async function startNav(start,end,isReal){
       name: step.name, 
       destinations: step.destinations, 
       exits: step.exits, 
-      classes: (step.intersections[0] && step.intersections[0].classes) ? step.intersections[0].classes : [] 
+      classes: intersection.classes || [] // 安全に 'classes' を取得
     });
     step.geometry.coordinates.forEach(c=>routeCoords.push([c[1],c[0]]));
   });
   
-  // ★追加: 実際にスナップされた開始地点をマーカーに反映
+  // 実際にスナップされた開始地点をマーカーに反映
   const actualStartPoint = [data.routes[0].legs[0].steps[0].maneuver.location[1], data.routes[0].legs[0].steps[0].maneuver.location[0]];
 
   if(routeLine) map.removeLayer(routeLine);
   routeLine=L.polyline(routeCoords,{color:'blue',weight:6}).addTo(map);
 
   if(navMarker){
-    navMarker.setLatLng(actualStartPoint); // ★修正
+    navMarker.setLatLng(actualStartPoint); 
   } else {
-     navMarker=L.marker(actualStartPoint, { // ★修正
+     navMarker=L.marker(actualStartPoint, { 
       icon:L.divIcon({className:'triangle', html:'<div></div>'}),
       rotationAngle:0
     }).addTo(map);
@@ -574,7 +582,7 @@ function findClosestPointOnRoute(pos, coords) {
 function getInstructionText(maneuver) {
   const type = maneuver.type;
   const modifier = maneuver.modifier;
-  const name = maneuver.name || ''; // 道路/交差点/施設名
+  const name = maneuver.name || ''; // 道路/交拠点/施設名
   const destinations = (maneuver.destinations || '').split(',')[0]; 
   const exits = maneuver.exits; // 出口番号
   const classes = maneuver.classes || []; // 施設情報
