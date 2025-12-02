@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>マップ</title>
+<title>完全ナビマップ（道路スナップ版）</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
 /* 共通レイアウト */
@@ -250,10 +250,9 @@ async function geocode(query){
 
 // 目的地検索
 async function searchDestination(){
-  // ★修正: ジオコード失敗時にエラーをキャッチ
   try {
     const endAddr=document.getElementById('end').value;
-    if(!endAddr) { alert("目的地を入力してください"); return false; } // ★修正
+    if(!endAddr) { alert("目的地を入力してください"); return false; } 
     const dest=await geocode(endAddr);
     destCoord=[dest.lat,dest.lng];
     if(destMarker) map.removeLayer(destMarker);
@@ -262,10 +261,10 @@ async function searchDestination(){
     document.getElementById('info').innerText=`検索完了: ${dest.name}`;
     speak(`目的地は${dest.name}です`);
     if(routeLine) map.removeLayer(routeLine);
-    return true; // ★修正: 成功
+    return true; 
   } catch(err) {
     alert("目的地の検索に失敗しました: " + err);
-    return false; // ★修正: 失敗
+    return false; 
   }
 }
 
@@ -299,12 +298,12 @@ function primeSpeech() {
 async function startNormalNav(){
   primeSpeech(); 
   useGPS=true; 
-  const success = await searchDestination(); // ★修正
-  if (!success) return; // ★修正
+  const success = await searchDestination(); 
+  if (!success) return; 
 
   const startAddr=document.getElementById('start').value;
   if(startAddr){ 
-    try { // ★修正: 出発地のジオコード失敗をキャッチ
+    try { 
       const s=await geocode(startAddr); 
       startCoord=[s.lat,s.lng]; 
     } catch(err) {
@@ -322,13 +321,13 @@ async function startNormalNav(){
 async function startDemoNav(){
   primeSpeech(); 
   useGPS=false; 
-  const success = await searchDestination(); // ★修正
-  if (!success) return; // ★修正
+  const success = await searchDestination(); 
+  if (!success) return; 
   
   const startAddr=document.getElementById('start').value;
   let start;
   if(startAddr){ 
-    try { // ★修正: 出発地のジオコード失敗をキャッチ
+    try { 
       const s=await geocode(startAddr); 
       start=[s.lat,s.lng]; 
     } catch(err) {
@@ -351,21 +350,28 @@ async function startNav(start,end,isReal){
   setTimeout(() => map.invalidateSize(), 100);
 
   const mode=document.getElementById('mode').value;
-  const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true&intersections=true`;
+  
+  // ★★★ 修正: `radiuses=unlimited;unlimited` を追加 ★★★
+  // これにより、OSRMは指定された座標から最も近い道路を自動で探し、
+  // そこを開始点/終了点としてルート検索を実行します。
+  const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true&intersections=true&radiuses=unlimited;unlimited`;
   
   let data;
   try {
     const res=await fetch(url);
     data=await res.json();
-    if(!data.routes || data.routes.length===0 || data.code !== 'Ok'){ // ★修正: OSRMの `code` も確認
-      // ★修正: アラートを具体的に
+    if(!data.routes || data.routes.length===0 || data.code !== 'Ok'){ 
       console.warn("OSRMからルートが返されませんでした:", data);
-      alert("ルートが取得できません。出発地または目的地が道路から離れすぎていないか確認してください。"); 
+      // ★修正: "NoRoute"の場合のアラート文言を変更
+      if (data.code === 'NoRoute') {
+        alert("ルートが見つかりませんでした。OSRMがこの地点間の道路ネットワークを認識できない可能性があります。"); 
+      } else {
+        alert("ルートが取得できませんでした。 (Code: " + data.code + ")"); 
+      }
       stopNav(); 
       return; 
     }
   } catch(err) {
-    // ★修正: アラートとコンソール出力を具体的に
     console.error("ルート検索エラー:", err);
     alert("ルート検索サーバーに接続できませんでした。ネットワーク接続を確認するか、サーバーがダウンしている可能性があります。");
     stopNav();
@@ -386,14 +392,17 @@ async function startNav(start,end,isReal){
     });
     step.geometry.coordinates.forEach(c=>routeCoords.push([c[1],c[0]]));
   });
+  
+  // ★追加: 実際にスナップされた開始地点をマーカーに反映
+  const actualStartPoint = [data.routes[0].legs[0].steps[0].maneuver.location[1], data.routes[0].legs[0].steps[0].maneuver.location[0]];
 
   if(routeLine) map.removeLayer(routeLine);
   routeLine=L.polyline(routeCoords,{color:'blue',weight:6}).addTo(map);
 
   if(navMarker){
-    navMarker.setLatLng(start);
+    navMarker.setLatLng(actualStartPoint); // ★修正
   } else {
-     navMarker=L.marker(start,{
+     navMarker=L.marker(actualStartPoint, { // ★修正
       icon:L.divIcon({className:'triangle', html:'<div></div>'}),
       rotationAngle:0
     }).addTo(map);
@@ -438,7 +447,7 @@ async function startNav(start,end,isReal){
             // 案内実行 (デモより広い距離で反応)
             if (distToManeuver < 40) { 
                 if (lastSpokenStep !== nextManeuver && speech) {
-                    speak(instruction); // ★修正: speak関数を使う
+                    speak(instruction); 
                     lastSpokenStep = nextManeuver;
                 }
                 maneuverIndex++; 
@@ -489,7 +498,7 @@ async function startNav(start,end,isReal){
 
         if (distToManeuver < 20) { 
             if (lastSpokenStep !== nextManeuver && speech) {
-                speak(instruction); // ★修正: speak関数を使う
+                speak(instruction); 
                 lastSpokenStep = nextManeuver;
             }
             maneuverIndex++; 
@@ -537,7 +546,7 @@ function getDistance(a,b){
 
 // 残り距離
 function calculateRemainingDistance(idx,coords){
-  if (idx === null) return '- km'; // ★修正
+  if (idx === null) return '- km'; 
   let sum=0;
   for(let i=idx;i<coords.length-1;i++){
     sum+=getDistance(coords[i],coords[i+1]);
@@ -585,7 +594,8 @@ function getInstructionText(maneuver) {
   // 2. OSRMの操舵タイプに基づいて案内を生成
   switch (type) {
     case 'depart':
-      return '出発します';
+      // ★修正: 実際の出発道路名を案内
+      return (name || '道路') + ' に入ります';
 
     // 高速入口 (例: 小倉南ICから高速道路に入る)
     case 'on ramp':
