@@ -675,7 +675,11 @@ function getDirectionText(modifier) {
   }
 }
 
-// 音声
-function speak(text){
-  if(speech.speaking) speech.cancel();
-  const
+// 音声 
+  function speak(text){if(speech.speaking)speech.cancel(); 
+  let u=new SpeechSynthesisUtterance(text); u.lang='ja-
+  JP'; speech.speak(u);} 
+</script>
+  
+</body> 
+</html>
