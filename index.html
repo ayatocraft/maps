@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>マップ）</title>
+<title>完全ナビマップ（Query修正版）</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
 /* 共通レイアウト */
@@ -195,6 +195,7 @@ function watchCurrentPosition(){
   if(navigator.geolocation){
     navigator.geolocation.watchPosition(pos=>{
   
+  
       const latlng=[pos.coords.latitude, pos.coords.longitude];
       const heading = pos.coords.heading; 
       
@@ -351,8 +352,9 @@ async function startNav(start,end,isReal){
 
   const mode=document.getElementById('mode').value;
   
-  // ★★★ 修正: `intersections=true` を `annotations=intersections` に変更 ★★★
-  const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true&annotations=intersections&radiuses=unlimited;unlimited`;
+  // ★★★ 修正: `annotations=intersections` パラメータを削除 ★★★
+  // OSRMは steps=true だけで intersection 情報を返します。
+  const url=`https://router.project-osrm.org/route/v1/${mode}/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true&radiuses=unlimited;unlimited`;
   
   let data;
   try {
@@ -376,17 +378,10 @@ async function startNav(start,end,isReal){
   }
 
   routeCoords=[]; maneuvers=[];
-  // ★修正: data.legs[0].steps を OSRM v5 の正しい
-  // `annotations` を使うには data.routes[0].legs[0] の `steps` と `annotations` を
-  // 組み合わせる必要がありますが、OSRMデモサーバーは `intersections` を `step` の中に返してくれるようです。
-  // そのため、 `step.intersections` へのアクセスは
-  // `data.routes[0].legs[0].steps` の `step` から行います。
   data.routes[0].legs[0].steps.forEach((step, stepIndex) => {
     const maneuverLoc = step.maneuver.location;
     
-    // OSRMは 'annotations' を別配列で返すことがあるが、
-    // 'steps=true' の場合は 'step' の中に 'intersections' が含まれることが多い。
-    // 念のため、'annotations' が別配列の場合も考慮する (今回は簡易的にstep.intersections)
+    // step.intersections を安全に取得
     const intersection = (step.intersections && step.intersections.length > 0) ? step.intersections[0] : {};
 
     maneuvers.push({
@@ -547,7 +542,7 @@ function getDistance(a,b){
   const R=6371000; // メートル
   const dLat=(b[0]-a[0])*Math.PI/180;
   const dLon=(b[1]-a[1])*Math.PI/180;
-  const lat1=a[0]*Math.PI/180, lat2=b[0]*Math.PI/180;
+subDomains:  const lat1=a[0]*Math.PI/180, lat2=b[0]*Math.PI/180;
   const d=Math.sin(dLat/2)**2 + Math.sin(dLon/2)**2*Math.cos(lat1)*Math.cos(lat2);
   return 2*R*Math.atan2(Math.sqrt(d),Math.sqrt(1-d));
 }
@@ -560,7 +555,7 @@ function calculateRemainingDistance(idx,coords){
     sum+=getDistance(coords[i],coords[i+1]);
   }
   if(sum<1000) return `${Math.round(sum)} m`;
-  else return `${(sum/1000).toFixed(1)} km`;
+s  else return `${(sum/1000).toFixed(1)} km`;
 }
 
 // ルート上の最寄り点を探す
@@ -582,7 +577,7 @@ function findClosestPointOnRoute(pos, coords) {
 function getInstructionText(maneuver) {
   const type = maneuver.type;
   const modifier = maneuver.modifier;
-  const name = maneuver.name || ''; // 道路/交拠点/施設名
+  const name = maneuver.name || ''; // 道路/交差点/施設名
   const destinations = (maneuver.destinations || '').split(',')[0]; 
   const exits = maneuver.exits; // 出口番号
   const classes = maneuver.classes || []; // 施設情報
@@ -602,7 +597,7 @@ function getInstructionText(maneuver) {
   // 2. OSRMの操舵タイプに基づいて案内を生成
   switch (type) {
     case 'depart':
-      // ★修正: 実際の出発道路名を案内
+      // 実際の出発道路名を案内
       return (name || '道路') + ' に入ります';
 
     // 高速入口 (例: 小倉南ICから高速道路に入る)
@@ -683,10 +678,4 @@ function getDirectionText(modifier) {
 // 音声
 function speak(text){
   if(speech.speaking) speech.cancel();
-  const u=new SpeechSynthesisUtterance(text);
-  u.lang = 'ja-JP'; // 言語を日本語に指定
-  speech.speak(u);
-}
-</script>
-</body>
-</html>
+  const
