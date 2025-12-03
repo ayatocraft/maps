@@ -3,81 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>マップ</title>
+    <title>完全ナビマップ（タイルURL修正版）</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
     <style>
-        /* --- レイアウトの基本設定 (FlexboxでUI崩れを修正) --- */
+        /* --- レイアウトの基本設定 (FlexboxでUI崩れを修正済み) --- */
         html, body {
-            height: 100%;
-            margin: 0;
-            font-family: sans-serif;
-            display: flex; /* ★修正: Flexboxでサイドバーと地図をきれいに横並びにする */
-            flex-direction: row;
-            overflow: hidden; /* 画面からはみ出し防止 */
+            height: 100%; margin: 0; font-family: sans-serif;
+            display: flex; /* FlexboxでUI崩れは解決済み */
+            flex-direction: row; overflow: hidden;
         }
-        
-        input, select, button {
-            width: 100%;
-            margin-bottom: 10px;
-            padding: 8px;
-            font-size: 16px;
-            box-sizing: border-box;
+        input, select, button { width: 100%; margin-bottom: 10px; padding: 8px; font-size: 16px; box-sizing: border-box; }
+        #sidebar { 
+            width: 300px; min-width: 300px; max-width: 80%; height: 100%; 
+            background: #f9f9f9; padding: 10px; box-shadow: 2px 0 5px rgba(0,0,0,0.3); 
+            overflow-y: auto; z-index: 1000; box-sizing: border-box;
         }
-
-        /* --- サイドバー --- */
-        #sidebar {
-            width: 300px;
-            min-width: 300px; /* 縮まないように固定 */
-            max-width: 80%;
-            height: 100%;
-            background: #f9f9f9;
-            padding: 10px;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.3);
-            overflow-y: auto;
-            z-index: 1000;
-            box-sizing: border-box;
-            /* float: left; は削除 */
-        }
-
-        /* --- マップコンテナ --- */
-        #map-container {
-            flex-grow: 1; /* ★修正: 残りのスペースを全て埋める */
-            /* margin-left: 300px; と width: calc... は削除 */
-            height: 100%;
-            position: relative;
-        }
-
-        #map {
-            width: 100%;
-            height: 100%;
-        }
-        
-        /* --- その他のスタイルは変更なし --- */
-        #topbar { 
-            position: absolute; top: 10px; left: 10px; right: 10px; height: auto; background: green; color: white; 
-            display: none; flex-direction: row; align-items: center; justify-content: space-between; 
-            padding: 10px 15px; box-sizing: border-box; z-index: 1001; border-radius: 8px; 
-            box-shadow: 0 2px 8px rgba(0,0,0,0.3); flex-wrap: wrap; 
-        }
+        #map-container { flex-grow: 1; height: 100%; position: relative; }
+        #map { width: 100%; height: 100%; }
+        /* その他UIスタイルは省略 */
+        #topbar { position: absolute; top: 10px; left: 10px; right: 10px; height: auto; background: green; color: white; display: none; flex-direction: row; align-items: center; justify-content: space-between; padding: 10px 15px; box-sizing: border-box; z-index: 1001; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); flex-wrap: wrap; }
         #topbar span#nav-next { font-size: 20px; font-weight: bold; }
         #topbar span#nav-remaining { font-size: 16px; font-weight: normal; color: #f0f0f0; }
-        #topbar button { 
-            position: static; background: #f44336; color: white; border: none; padding: 5px 10px; 
-            font-size: 14px; font-weight: bold; cursor: pointer; border-radius: 5px; width: auto; margin-bottom: 0; 
-        }
-        #recenter-btn { 
-            position: absolute; bottom: 20px; right: 20px; width: 50px; height: 50px; font-size: 24px; 
-            border-radius: 50%; border: none; background-color: white; color: #333; 
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer; z-index: 900; 
-            display: flex; align-items: center; justify-content: center; padding: 0; 
-        }
+        #topbar button { position: static; background: #f44336; color: white; border: none; padding: 5px 10px; font-size: 14px; font-weight: bold; cursor: pointer; border-radius: 5px; width: auto; margin-bottom: 0; }
+        #recenter-btn { position: absolute; bottom: 20px; right: 20px; width: 50px; height: 50px; font-size: 24px; border-radius: 50%; border: none; background-color: white; color: #333; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer; z-index: 900; display: flex; align-items: center; justify-content: center; padding: 0; }
         #recenter-btn:hover { background-color: #f4f4f4; }
         #info { font-size: 14px; }
-        .triangle div { 
-            width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent; 
-            border-bottom: 24px solid red; transform-origin: bottom center; 
-            clip-path: polygon(50% 0%, 100% 100%, 70% 100%, 50% 70%, 30% 100%, 0% 100%); 
-        }
+        .triangle div { width: 0; height: 0; border-left: 12px solid transparent; border-right: 12px solid transparent; border-bottom: 24px solid red; transform-origin: bottom center; clip-path: polygon(50% 0%, 100% 100%, 70% 100%, 50% 70%, 30% 100%, 0% 100%); }
         #streetview { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; z-index: 2000; }
     </style>
 </head>
@@ -116,9 +67,21 @@
     <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
     <script src="https://rawcdn.githack.com/bbecquet/Leaflet.RotatedMarker/master/leaflet.rotatedMarker.js"></script>
     <script>
-        let map = L.map('map',{zoomControl:true}).setView([35.68,139.76],13);
-        let baseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'©OSM'}).addTo(map);
-        let satLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{subdomains:['mt0','mt1','mt2','mt3']});
+        let map = L.map('map',{zoomControl:true}).setView([35.68,139.76],13); 
+        
+        // ★修正1: OpenStreetMapの公式推奨URLに変更
+        let baseLayer = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map); 
+        
+        // ★修正2: GoogleサテライトのURLを更新
+        let satLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
+            subdomains: ['mt0','mt1','mt2','mt3'],
+            maxZoom: 20,
+            attribution:'© Google Satellite'
+        });
+        
         let navMarker, destMarker, routeLine; 
         let routeCoords=[], maneuvers=[], navIndex=0;
         let navInterval=null; 
@@ -188,21 +151,15 @@
         function showStreetView(){
             if(!destCoord) return alert("目的地を検索してください");
             const iframe=document.createElement('iframe');
-            iframe.width="100%";
-            iframe.height="100%";
-            iframe.style.border=0;
-            // ストリートビューURLは動作保証外のため、元コードの形式を維持しつつ、位置情報を修正
+            iframe.width="100%"; iframe.height="100%"; iframe.style.border=0;
             iframe.src=`https://www.google.com/maps/embed/v1/streetview?location=$${destCoord[0]},${destCoord[1]}&key=YOUR_API_KEY`; 
             const sv=document.getElementById('streetview');
-            sv.style.display='block';
-            sv.innerHTML='';
-            sv.appendChild(iframe);
+            sv.style.display='block'; sv.innerHTML=''; sv.appendChild(iframe);
         }
 
         function primeSpeech(){
             if(speech.speaking) speech.cancel();
-            let u=new SpeechSynthesisUtterance(' ');
-            u.volume=0; u.lang='ja-JP';
+            let u=new SpeechSynthesisUtterance(' '); u.volume=0; u.lang='ja-JP';
             speech.speak(u);
         }
 
@@ -235,15 +192,12 @@
             await startNav(start,destCoord,false);
         }
 
-        // --- ナビゲーション開始 (UI修正済み) ---
         async function startNav(start,end,isReal){
             if(navInterval) clearInterval(navInterval); navInterval=null;
             
-            // ★修正: Flexboxにより、サイドバーを非表示にするだけで地図が全画面になる
             document.getElementById('sidebar').style.display='none';
             document.getElementById('topbar').style.display='flex';
             
-            // ★修正: 地図のサイズが変更されたことをLeafletに通知し、地図タイルが正しく読み込まれるようにする
             setTimeout(()=>map.invalidateSize(),100); 
 
             const mode=document.getElementById('mode').value;
@@ -297,15 +251,12 @@
             },500);
         }
 
-        // --- ナビゲーション停止 (UI修正済み) ---
         function stopNav(){
             if(navInterval) clearInterval(navInterval); navInterval=null;
             
-            // ★修正: Flexboxにより、サイドバーを表示するだけで地図が自動で縮小する
             document.getElementById('sidebar').style.display='block';
             document.getElementById('topbar').style.display='none';
             
-            // ★修正: 地図のサイズが変更されたことをLeafletに通知する
             setTimeout(()=>map.invalidateSize(),100); 
 
             if(routeLine) map.removeLayer(routeLine); routeLine=null;
@@ -315,7 +266,6 @@
             useGPS=true; lastSpokenStep=null;
         }
 
-        // --- 距離計算・案内テキスト関数は変更なし ---
         function getDistance(a,b){ const R=6371000; const dLat=(b[0]-a[0])*Math.PI/180; const dLon=(b[1]-a[1])*Math.PI/180; const lat1=a[0]*Math.PI/180, lat2=b[0]*Math.PI/180; const d=Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2; return 2*R*Math.atan2(Math.sqrt(d),Math.sqrt(1-d)); }
         function calculateRemainingDistance(idx,coords){ if(idx===null) return '-'; let sum=0; for(let i=idx;i<coords.length-1;i++) sum+=getDistance(coords[i],coords[i+1]); return sum>=1000? (sum/1000).toFixed(1)+' km' : Math.round(sum/10)*10+' m'; }
         function getInstructionText(m){ const type=m.type; const mod=m.modifier; const name=m.name||''; const destinations=(m.destinations||'').split(',')[0]; const exits=m.exits; const classes=m.classes||[]; if(classes.includes('toll_booth')) return (name||'料金所')+' を通過します'; if(type==='service' || classes.includes('service_area') || classes.includes('rest_area')) return (name||'サービスエリア')+' に入ります'; if(type==='off ramp' && (name.toUpperCase().includes('PA') || name.toUpperCase().includes('SA'))) return name+' に入ります'; switch(type){ case 'depart': return (name||'道路')+' に入ります'; case 'on ramp': return (name||'ランプ')+' から高速道路に入ります'; case 'off ramp': return (destinations? destinations+' 方面、':'')+(name||'出口')+(exits? ' (出口 '+exits+')':'')+' で高速道路を降ります'; case 'fork': return (name?name+' で ':'')+(destinations? destinations+' 方面、':'')+getDirectionText(mod)+' 方向です'; case 'merge': return (destinations? destinations+' 方面、':'')+(name? name+' から ':'')+'合流します'; case 'turn': if(mod==='uturn') return 'Uターンします'; if(name) return name+' を '+getDirectionText(mod)+' 方向です'; return getDirectionText(mod)+' に曲がります'; case 'continue': case 'new name': if(mod==='uturn') return 'Uターンします'; if(name) return name+' に入ります'; return '道なりに進む'; case 'roundabout': return 'ロータリーに入ります'; case 'arrive': return '目的地に到着します'; default: return mod? getDirectionText(mod)+' に曲がります':'道なりに進む'; } }
