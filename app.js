@@ -6,7 +6,6 @@
 let map;
 
 // 現在地マーカー
-let userMarker;
 let userHeading = 0;
 
 // 現在地座標
