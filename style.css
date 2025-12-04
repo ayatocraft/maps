@@ -1,133 +1,170 @@
-/* 全体レイアウト */
+/* リセット */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
 html, body {
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    font-family: system-ui, sans-serif;
+  height: 100%;
+  overflow: hidden;
+  font-family: system-ui, sans-serif;
 }
 
-/* マップ本体 */
-#map {
-    width: 100%;
-    height: 100%;
+/* 全体を左右に並べる */
+#app {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
 }
 
-/* サイドバー */
+/* =========================
+   左のサイドバー
+   ========================= */
 #sidebar {
-    position: absolute;
-    left: 0;
-    top: 0;
-    width: 260px;
-    height: 100%;
-    background: #f4f4f4;
-    padding: 15px;
-    overflow-y: auto;
-    z-index: 1000;
-    box-shadow: 2px 0 6px rgba(0,0,0,0.2);
+  width: 280px;
+  min-width: 280px;
+  background: #f4f4f4;
+  padding: 20px;
+  border-right: 1px solid #ddd;
+  overflow-y: auto;
 }
 
+/* サイドバーの見出し */
 #sidebar h2 {
-    margin-top: 0;
+  font-size: 20px;
+  margin-bottom: 10px;
 }
 
-.menu-btn {
-    width: 100%;
-    padding: 10px;
-    margin-top: 8px;
-    border: none;
-    background: #3498db;
-    color: white;
-    font-size: 15px;
-    border-radius: 6px;
+/* ボタン */
+.sidebar-btn {
+  width: 100%;
+  padding: 14px;
+  background: #2196F3;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  margin-bottom: 15px;
+  font-size: 16px;
+  cursor: pointer;
 }
 
-.menu-btn:hover {
-    background: #2980b9;
-    cursor: pointer;
-}
-
-label {
-    display: block;
-    margin-top: 10px;
-    margin-bottom: 3px;
-    font-weight: bold;
+.sidebar-btn:hover {
+  background: #1976D2;
 }
 
 input[type="text"] {
-    width: 100%;
-    padding: 8px;
-    border: 1px solid #aaa;
-    border-radius: 5px;
+  width: 100%;
+  padding: 10px;
+  margin: 8px 0 15px 0;
+  border-radius: 6px;
+  border: 1px solid #ccc;
 }
 
-.checkbox {
-    margin-top: 10px;
-    display: flex;
-    align-items: center;
-}
-.checkbox input {
-    margin-right: 5px;
+/* チェックボックスの行 */
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
 }
 
-/* 現在地センターボタン */
-#locate-btn {
-    position: absolute;
-    bottom: 30px;
-    right: 30px;
-    width: 55px;
-    height: 55px;
-    font-size: 23px;
-    border: none;
-    background: #fff;
-    border-radius: 50%;
-    box-shadow: 0 0 8px rgba(0,0,0,0.4);
-    z-index: 900;
-    cursor: pointer;
+.checkbox-row label {
+  margin-left: 6px;
 }
 
-/* ナビビュー */
-#nav-view {
-    position: absolute;
-    width: 100%;
-    height: 100%;
-    display: none; /* ナビ中のみ表示 */
-    top: 0;
-    left: 0;
-    z-index: 1500;
+/* =========================
+   地図エリア
+   ========================= */
+#map {
+  flex: 1;
+  height: 100vh;
+  position: relative;
+  z-index: 1;
 }
 
-#nav-topbar {
-    background: #2ecc71;
-    color: white;
-    padding: 15px;
-    font-size: 18px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+/* =========================
+   現在地センターボタン
+   ========================= */
+#gpsButton {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: white;
+  border: 2px solid #bbb;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 26px;
+  z-index: 2000;
 }
 
-#nav-distance {
-    font-size: 22px;
-    font-weight: bold;
+/* =========================
+   ナビビュー（案内中の上部）
+   ========================= */
+#navView {
+  position: absolute;
+  top: 0;
+  left: 280px; /* サイドバー分ずらす（案内中にJSで0へ変更） */
+  right: 0;
+  height: 90px;
+  background: #4CAF50;
+  color: white;
+  padding: 12px 20px;
+  display: none; /* 最初は非表示 */
+  flex-direction: column;
+  justify-content: center;
+  z-index: 5000;
 }
 
-#nav-turn {
-    font-size: 20px;
-    margin-left: 10px;
-    flex: 1;
+#navView.active {
+  display: flex;
 }
 
-#nav-stop {
-    background: red;
-    color: white;
-    border: none;
-    padding: 10px;
-    border-radius: 6px;
-    font-size: 15px;
+#navDestination {
+  font-size: 20px;
+  font-weight: bold;
 }
 
-/* サイドバーが非表示になるナビモード用 */
-.nav-mode #sidebar {
-    display: none;
+#navNextTurn {
+  font-size: 18px;
+  margin-top: 5px;
 }
+
+/* 停止ボタン */
+#stopNavBtn {
+  position: absolute;
+  right: 20px;
+  top: 14px;
+  padding: 6px 10px;
+  background: #e53935;
+  color: white;
+  font-size: 14px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  z-index: 6000;
+}
+
+/* =========================
+   地図（Leaflet）調整
+   ========================= */
+.leaflet-control-container {
+  margin-top: 90px; /* ナビトップバーと重ならないように */
+}
+
+/* =========================
+   ナビビュー中はサイドバー非表示
+   ========================= */
+body.nav-mode #sidebar {
+  display: none !important;
+}
+
+body.nav-mode #navView {
+  left: 0 !important;
+}
+
