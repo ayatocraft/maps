@@ -1,0 +1,133 @@
+/* 全体レイアウト */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    font-family: system-ui, sans-serif;
+}
+
+/* マップ本体 */
+#map {
+    width: 100%;
+    height: 100%;
+}
+
+/* サイドバー */
+#sidebar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 260px;
+    height: 100%;
+    background: #f4f4f4;
+    padding: 15px;
+    overflow-y: auto;
+    z-index: 1000;
+    box-shadow: 2px 0 6px rgba(0,0,0,0.2);
+}
+
+#sidebar h2 {
+    margin-top: 0;
+}
+
+.menu-btn {
+    width: 100%;
+    padding: 10px;
+    margin-top: 8px;
+    border: none;
+    background: #3498db;
+    color: white;
+    font-size: 15px;
+    border-radius: 6px;
+}
+
+.menu-btn:hover {
+    background: #2980b9;
+    cursor: pointer;
+}
+
+label {
+    display: block;
+    margin-top: 10px;
+    margin-bottom: 3px;
+    font-weight: bold;
+}
+
+input[type="text"] {
+    width: 100%;
+    padding: 8px;
+    border: 1px solid #aaa;
+    border-radius: 5px;
+}
+
+.checkbox {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+}
+.checkbox input {
+    margin-right: 5px;
+}
+
+/* 現在地センターボタン */
+#locate-btn {
+    position: absolute;
+    bottom: 30px;
+    right: 30px;
+    width: 55px;
+    height: 55px;
+    font-size: 23px;
+    border: none;
+    background: #fff;
+    border-radius: 50%;
+    box-shadow: 0 0 8px rgba(0,0,0,0.4);
+    z-index: 900;
+    cursor: pointer;
+}
+
+/* ナビビュー */
+#nav-view {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    display: none; /* ナビ中のみ表示 */
+    top: 0;
+    left: 0;
+    z-index: 1500;
+}
+
+#nav-topbar {
+    background: #2ecc71;
+    color: white;
+    padding: 15px;
+    font-size: 18px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#nav-distance {
+    font-size: 22px;
+    font-weight: bold;
+}
+
+#nav-turn {
+    font-size: 20px;
+    margin-left: 10px;
+    flex: 1;
+}
+
+#nav-stop {
+    background: red;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 6px;
+    font-size: 15px;
+}
+
+/* サイドバーが非表示になるナビモード用 */
+.nav-mode #sidebar {
+    display: none;
+}
