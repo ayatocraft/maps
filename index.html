@@ -180,6 +180,8 @@
         let currentRotation = 0, lastSpokenInstruction = "";
         let isFirstRouteCalculation = true; // 初回フラグ
         let isRerouting = false; // リルート処理中フラグ
+        let synth = window.speechSynthesis;
+        let voices = [];
 
         // レイヤー
         const layers = {
@@ -200,10 +202,21 @@
             L.control.zoom({ position: 'topright' }).addTo(map);
             navMarker = L.marker([myLocation.lat, myLocation.lng], { icon: carIcon }).addTo(map);
             startGeolocation();
+            
+            // 音声ロード
+            loadVoices();
+            if (speechSynthesis.onvoiceschanged !== undefined) {
+                speechSynthesis.onvoiceschanged = loadVoices;
+            }
+
             map.on('contextmenu', function(e) {
                 document.getElementById('end-input').value = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
             });
             map.on('dragstart', () => { isFollowing = false; document.getElementById('center-btn').classList.remove('active'); });
+        }
+
+        function loadVoices() {
+            voices = synth.getVoices();
         }
 
         function setLayer(type) {
@@ -235,10 +248,8 @@
                                 displayLng = snap.lng;
                             } else if (snap.dist > REROUTE_THRESHOLD_METERS) {
                                 // 40m以上離れたらリルート実行
-                                // 生の座標を使ってリルートすることで、交差点を過ぎた位置から新しいルートを引かせる
                                 triggerReroute(rawLat, rawLng);
                             }
-                            // 20m~40mの間は、吸着せず生のGPSを表示するがリルートもしない（バッファ）
                         }
 
                         updateMyLocation(displayLat, displayLng, heading);
@@ -254,18 +265,16 @@
             if (isRerouting) return;
             isRerouting = true;
             console.log("Rerouting triggered...");
+            speak("ルートを外れました。再検索します。");
 
             const endWp = routingControl.getWaypoints()[1]; // 現在の目的地
             
             // 現在地から目的地へ再検索
-            // ポイント: 古いルート情報はリセットされるため、現在地から最適な新ルート（違う道）が探索される
             routingControl.setWaypoints([
                 L.latLng(lat, lng),
                 endWp.latLng
             ]);
 
-            // リルート完了検知は routingControl.on('routesfound') で行われるため
-            // ここではフラグを少し遅延させて戻す（連続発火防止）
             setTimeout(() => { isRerouting = false; }, 3000);
         }
 
@@ -275,13 +284,9 @@
             let closestPt = { lat: lat, lng: lng };
             const p = L.latLng(lat, lng);
 
-            // 計算負荷軽減のため、直近の計算結果付近だけ探すのが理想だが、
-            // ここでは簡易実装として全点探索（モバイル端末でも数千点程度なら十分高速）
             for (let i = 0; i < coords.length - 1; i++) {
                 const p1 = L.latLng(coords[i]);
                 const p2 = L.latLng(coords[i+1]);
-                
-                // 単純な点間距離ではなく、線分への最短距離を計算
                 const closestOnSeg = getClosestPointOnSegment(p, p1, p2);
                 const dist = map.distance(p, closestOnSeg);
                 
@@ -335,15 +340,34 @@
             map.setView(navMarker.getLatLng(), map.getZoom(), {animate: true});
         }
 
+        // --- 音声関連の強化 ---
         function unlockAudio() {
-            if ('speechSynthesis' in window) {
-                const u = new SpeechSynthesisUtterance("");
-                window.speechSynthesis.speak(u);
+            // モバイルでのブロック解除のため、実際に何か喋らせる
+            speak("ナビゲーションを開始します");
+        }
+
+        function speak(text) {
+            if (!synth) return;
+            
+            // 連続して呼ばれた場合、前のをキャンセルして即座に新しいのを喋る
+            synth.cancel();
+
+            const uttr = new SpeechSynthesisUtterance(text);
+            uttr.lang = 'ja-JP';
+            uttr.rate = 1.0;
+            uttr.volume = 1.0;
+
+            // 日本語ボイスを優先的に探して適用
+            if (voices.length > 0) {
+                const jaVoice = voices.find(v => v.lang.includes('ja') || v.lang.includes('JP'));
+                if (jaVoice) uttr.voice = jaVoice;
             }
+
+            synth.speak(uttr);
         }
 
         async function calculateAndStart(demo) {
-            unlockAudio(); 
+            unlockAudio(); // 音声アンロック実行
 
             const startInput = document.getElementById('start-input').value;
             const endInput = document.getElementById('end-input').value;
@@ -441,7 +465,6 @@
                 currentRoute = e.routes[0];
                 updateNavDisplay(0);
 
-                // 初回のみ全体を表示、リルート時は現在の視点を維持
                 if (isFirstRouteCalculation) {
                     const bounds = L.latLngBounds(currentRoute.coordinates);
                     map.fitBounds(bounds, {padding: [50, 50]});
@@ -456,9 +479,7 @@
 
             routingControl.on('routingerror', function(e) {
                 console.error("OSRM Error:", e);
-                // エラー時は静かに終了せず、アラートだけ出してリトライ待機でも良いが、今回は停止
                 if(isRerouting) {
-                    // リルート失敗時は少し待ってフラグ戻す
                     isRerouting = false;
                     return; 
                 }
@@ -630,14 +651,6 @@
                 'uturn': 'fa-rotate-left', 'fork': 'fa-code-branch', 'merge': 'fa-code-branch', 'roundabout': 'fa-sync'
             };
             return map[m] || 'fa-arrow-up';
-        }
-
-        function speak(text) {
-            if ('speechSynthesis' in window) {
-                const uttr = new SpeechSynthesisUtterance(text);
-                uttr.lang = 'ja-JP';
-                window.speechSynthesis.speak(uttr);
-            }
         }
 
         window.onload = initMap;
