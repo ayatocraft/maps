@@ -5,11 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Leaflet Navigation App</title>
     
+    <!-- Leaflet & Tailwind CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
     <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
+    <!-- --- CSS --- -->
     <style>
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: 'Noto Sans JP', sans-serif; }
         
@@ -166,15 +169,17 @@
     <script>
         // --- 設定変数 ---
         const UPDATE_INTERVAL_MS = 250; 
-        const DEMO_SPEED_KMH = 50;
-        const SNAP_TOLERANCE_METERS = 20; // 吸着距離閾値
+        const DEMO_SPEED_KMH = 50; // デモ走行の速度
+        const SNAP_TOLERANCE_METERS = 20; // ルート吸着距離 (m)
+        const REROUTE_THRESHOLD_METERS = 40; // リルート判定距離 (m)
         
         let map, navMarker, routingControl = null, currentRoute = null;
         let isNavigating = false, isDemoMode = false, isFollowing = true;
         let demoTimerId = null, watchId = null;
         let myLocation = { lat: 35.681236, lng: 139.767125, heading: 0 };
         let currentRotation = 0, lastSpokenInstruction = "";
-        let isFirstRouteCalculation = true; // 初回ルート計算かどうかのフラグ
+        let isFirstRouteCalculation = true; // 初回フラグ
+        let isRerouting = false; // リルート処理中フラグ
 
         // レイヤー
         const layers = {
@@ -220,19 +225,20 @@
                         let displayLat = rawLat;
                         let displayLng = rawLng;
 
-                        // ナビ中かつデモ以外なら、ルートへの吸着を試みる
-                        if (isNavigating && !isDemoMode && currentRoute) {
+                        // ナビ中かつデモ以外なら、ルートとの距離を計算
+                        if (isNavigating && !isDemoMode && currentRoute && !isRerouting) {
                             const snap = snapToRoute(rawLat, rawLng, currentRoute.coordinates);
                             
-                            // 吸着範囲内(20m)なら、表示位置を修正しリルートチェックをスキップ
                             if (snap.dist <= SNAP_TOLERANCE_METERS) {
+                                // 20m以内ならルート上に吸着
                                 displayLat = snap.lat;
                                 displayLng = snap.lng;
-                                // 吸着している＝ルート上にいるとみなすので checkOffRoute は呼ばない
-                            } else {
-                                // 範囲外なら生のGPSを使い、オフルート判定を行う
-                                checkOffRoute(rawLat, rawLng);
+                            } else if (snap.dist > REROUTE_THRESHOLD_METERS) {
+                                // 40m以上離れたらリルート実行
+                                // 生の座標を使ってリルートすることで、交差点を過ぎた位置から新しいルートを引かせる
+                                triggerReroute(rawLat, rawLng);
                             }
+                            // 20m~40mの間は、吸着せず生のGPSを表示するがリルートもしない（バッファ）
                         }
 
                         updateMyLocation(displayLat, displayLng, heading);
@@ -243,26 +249,42 @@
             }
         }
 
+        // リルート実行関数
+        function triggerReroute(lat, lng) {
+            if (isRerouting) return;
+            isRerouting = true;
+            console.log("Rerouting triggered...");
+
+            const endWp = routingControl.getWaypoints()[1]; // 現在の目的地
+            
+            // 現在地から目的地へ再検索
+            // ポイント: 古いルート情報はリセットされるため、現在地から最適な新ルート（違う道）が探索される
+            routingControl.setWaypoints([
+                L.latLng(lat, lng),
+                endWp.latLng
+            ]);
+
+            // リルート完了検知は routingControl.on('routesfound') で行われるため
+            // ここではフラグを少し遅延させて戻す（連続発火防止）
+            setTimeout(() => { isRerouting = false; }, 3000);
+        }
+
         // ルート上の最も近い点を計算する関数
         function snapToRoute(lat, lng, coords) {
             let minDist = Infinity;
             let closestPt = { lat: lat, lng: lng };
             const p = L.latLng(lat, lng);
 
+            // 計算負荷軽減のため、直近の計算結果付近だけ探すのが理想だが、
+            // ここでは簡易実装として全点探索（モバイル端末でも数千点程度なら十分高速）
             for (let i = 0; i < coords.length - 1; i++) {
                 const p1 = L.latLng(coords[i]);
                 const p2 = L.latLng(coords[i+1]);
-                const d = L.LineUtil.pointToSegmentDistance(map.latLngToLayerPoint(p), map.latLngToLayerPoint(p1), map.latLngToLayerPoint(p2));
                 
-                // ピクセル距離をメートル概算に戻す（簡易的だが実用的）
-                // LeafletのpointToSegmentDistanceはピクセル単位だが、正確なメートル計算のためには
-                // 各セグメント上での投影が必要。ここでは軽量化のため、
-                // 端点との距離と、セグメントへ下ろした垂線の足(近似)を使うロジックにする。
-                // 厳密な計算より、vertex(頂点)間の補間を行う。
-
-                // より単純で堅牢な方法：線分上の最近傍点を見つける幾何計算
+                // 単純な点間距離ではなく、線分への最短距離を計算
                 const closestOnSeg = getClosestPointOnSegment(p, p1, p2);
                 const dist = map.distance(p, closestOnSeg);
+                
                 if (dist < minDist) {
                     minDist = dist;
                     closestPt = closestOnSeg;
@@ -313,7 +335,6 @@
             map.setView(navMarker.getLatLng(), map.getZoom(), {animate: true});
         }
 
-        // スマホで音声を鳴らすためのアンロック処理
         function unlockAudio() {
             if ('speechSynthesis' in window) {
                 const u = new SpeechSynthesisUtterance("");
@@ -322,7 +343,7 @@
         }
 
         async function calculateAndStart(demo) {
-            unlockAudio(); // 音声アンロック実行
+            unlockAudio(); 
 
             const startInput = document.getElementById('start-input').value;
             const endInput = document.getElementById('end-input').value;
@@ -330,7 +351,7 @@
             
             if (!endInput) { alert("目的地を入力してください"); return; }
             
-            setLoading(true); // ロード中表示
+            setLoading(true);
 
             let startLatLng = L.latLng(myLocation.lat, myLocation.lng);
             if (startInput && startInput.includes(',')) {
@@ -345,7 +366,6 @@
                     endLatLng = L.latLng(parseFloat(p[0]), parseFloat(p[1]));
                     startRouteEngine(startLatLng, endLatLng, avoidHighways, demo);
                 } else {
-                    // 日本語検索のためのヘッダー設定などを考慮
                     const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(endInput)}&accept-language=ja`);
                     const data = await res.json();
                     
@@ -383,12 +403,11 @@
         function startRouteEngine(start, end, avoidHighways, demo) {
             if (routingControl) { map.removeControl(routingControl); routingControl = null; }
 
-            // 検索成功したのでモード切替
             setLoading(false);
-
             isDemoMode = demo;
             isNavigating = true;
-            isFirstRouteCalculation = true; // 初回フラグを立てる
+            isFirstRouteCalculation = true;
+            isRerouting = false;
 
             document.getElementById('sidebar').classList.add('hidden-side');
             document.getElementById('nav-panel').style.display = 'flex';
@@ -397,7 +416,7 @@
             const routerOptions = {
                 waypoints: [start, end],
                 router: L.Routing.osrmv1({
-                    serviceUrl: 'https://router.project-osrm.org/route/v1', // 公開デモサーバー
+                    serviceUrl: 'https://router.project-osrm.org/route/v1',
                     profile: 'driving',
                     routingOptions: { 
                         exclude: avoidHighways ? ['motorway'] : [], 
@@ -412,13 +431,12 @@
                     return L.marker(wp.latLng, {icon: endIcon});
                 },
                 addWaypoints: false, 
-                fitSelectedRoutes: false, // 自動ズームを無効化（リルート時の視点固定のため）
+                fitSelectedRoutes: false, 
                 showAlternatives: false
             };
 
             routingControl = L.Routing.control(routerOptions).addTo(map);
 
-            // ルートが見つかった時
             routingControl.on('routesfound', function(e) {
                 currentRoute = e.routes[0];
                 updateNavDisplay(0);
@@ -436,12 +454,16 @@
                 }
             });
 
-            // ルート検索エラー時
             routingControl.on('routingerror', function(e) {
                 console.error("OSRM Error:", e);
+                // エラー時は静かに終了せず、アラートだけ出してリトライ待機でも良いが、今回は停止
+                if(isRerouting) {
+                    // リルート失敗時は少し待ってフラグ戻す
+                    isRerouting = false;
+                    return; 
+                }
                 let msg = "ルートが見つかりませんでした。";
                 if (e.error && e.error.message) msg += ` (${e.error.message})`;
-                else msg += " (サーバーエラーまたは距離が遠すぎます)";
                 
                 alert(msg);
                 stopNavigation();
@@ -462,7 +484,7 @@
             map.setView([myLocation.lat, myLocation.lng], 15);
             isFollowing = true;
             document.getElementById('center-btn').classList.add('active');
-            setLoading(false); // 念のためリセット
+            setLoading(false);
         }
 
         // --- デモ・案内ロジック ---
@@ -615,16 +637,6 @@
                 const uttr = new SpeechSynthesisUtterance(text);
                 uttr.lang = 'ja-JP';
                 window.speechSynthesis.speak(uttr);
-            }
-        }
-
-        function checkOffRoute(lat, lng) {
-            if (!currentRoute) return;
-            const startWp = routingControl.getWaypoints()[0];
-            const dist = map.distance([lat, lng], startWp.latLng);
-            if (dist > 50) {
-                const endWp = routingControl.getWaypoints()[1];
-                routingControl.setWaypoints([L.latLng(lat, lng), endWp.latLng]);
             }
         }
 
