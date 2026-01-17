@@ -182,6 +182,7 @@
         let isRerouting = false; // リルート処理中フラグ
         let synth = window.speechSynthesis;
         let voices = [];
+		let lastSpokenKey = "";
 
         // レイヤー
         const layers = {
