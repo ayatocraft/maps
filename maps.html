@@ -597,27 +597,29 @@
         }
 
         // --- ナビ案内ロジック ---
-        function updateNavDisplay(instructionIndex, distanceToTurn) {
-    if (!currentRoute) return;
+function calcDistanceToNextTurn(route, coordIdx, instrIdx) {
+    const coords = route.coordinates;
+    const instrs = route.instructions;
 
-    const instrs = currentRoute.instructions;
-    if (instructionIndex < instrs.length) {
-        const instr = instrs[instructionIndex];
+    if (!coords || !instrs) return 0;
+    if (instrIdx + 1 >= instrs.length) return 0;
+    if (coordIdx < 0 || coordIdx >= coords.length - 1) return 0;
 
-        const text = getTurnText(instr.modifier, instr.type, instr.text);
-        document.getElementById('nav-instruction').textContent = text;
+    const targetIdx = instrs[instrIdx + 1].index;
+    if (targetIdx <= coordIdx) return 0;
 
-        document.getElementById('nav-turn-icon').innerHTML =
-            `<i class="fas ${getTurnIcon(instr.modifier)}"></i>`;
+    let dist = 0;
+    const end = Math.min(targetIdx, coords.length - 1);
 
-        // ★ここが変更点
-        document.getElementById('nav-distance').textContent =
-            formatDistance(distanceToTurn);
+    for (let i = coordIdx; i < end; i++) {
+        const a = coords[i];
+        const b = coords[i + 1];
+        if (!a || !b) continue;
 
-        const totalDist = currentRoute.summary.totalDistance;
-        document.getElementById('nav-total-dist').textContent =
-            "全長: " + (totalDist / 1000).toFixed(1) + " km";
+        dist += map.distance(a, b);
     }
+
+    return dist;
 }
 
         // --- ユーティリティ ---
