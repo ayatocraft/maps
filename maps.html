@@ -632,17 +632,8 @@ function calcDistanceToNextTurn(route, coordIdx, instrIdx) {
             let brng = Math.atan2(y, x) * 180 / Math.PI;
             return (brng + 360) % 360;
         }
-		function calcDistanceToNextTurn(route, coordIdx, instrIdx) {
-    const coords = route.coordinates;
-    const instr = route.instructions[instrIdx + 1];
-    if (!instr) return 0;
+		
 
-    let dist = 0;
-    for (let i = coordIdx; i < instr.index; i++) {
-        dist += map.distance(coords[i], coords[i + 1]);
-    }
-    return dist;
-}
 		// 現在位置がルートのどの座標インデックス付近かを求める
 function getNearestRouteIndex(lat, lng, coords) {
     let minDist = Infinity;
@@ -672,8 +663,47 @@ function getInstructionIndexFromCoord(route, coordIdx) {
     }
     return result;
 }
+function formatDistance(m) {
+    if (!isFinite(m)) return "-- m";
+    if (m >= 1000) return (m / 1000).toFixed(1) + " km";
+    return Math.max(0, Math.round(m / 10) * 10) + " m";
+}
+function updateNavDisplay(instrIdx) {
+    if (!currentRoute) return;
 
+    const instrs = currentRoute.instructions;
+    if (!instrs || instrIdx >= instrs.length - 1) return;
 
+    const instr = instrs[instrIdx];
+
+    // 現在地がルートのどの座標か
+    const coordIdx = getNearestRouteIndex(
+        myLocation.lat,
+        myLocation.lng,
+        currentRoute.coordinates
+    );
+
+    // 次の曲がり角までの距離（m）
+    const distToNext = calcDistanceToNextTurn(
+        currentRoute,
+        coordIdx,
+        instrIdx
+    );
+
+    // 表示更新
+    document.getElementById('nav-instruction').textContent =
+        getTurnText(instr.modifier, instr.type, instr.text);
+
+    document.getElementById('nav-turn-icon').innerHTML =
+        `<i class="fas ${getTurnIcon(instr.modifier)}"></i>`;
+
+    document.getElementById('nav-distance').textContent =
+        formatDistance(distToNext);
+
+    const total = currentRoute.summary.totalDistance;
+    document.getElementById('nav-total-dist').textContent =
+        "全長: " + (total / 1000).toFixed(1) + " km";
+}
         function formatDistance(m) {
             if (m >= 1000) return (m / 1000).toFixed(1) + " km";
             return (Math.round(m / 10) * 10) + " m";
