@@ -332,6 +332,22 @@
                 }
             }
             if (isFollowing) map.setView([lat, lng], map.getZoom(), { animate: true, duration: 0.25 });
+			
+			 // ====== ★ ここから追加（案内更新の核心） ======
+    if (isNavigating && !isDemoMode && currentRoute) {
+        const coordIdx = getNearestRouteIndex(lat, lng, currentRoute.coordinates);
+        const instrIdx = getInstructionIndexFromCoord(currentRoute, coordIdx);
+        updateNavDisplay(instrIdx);
+
+        const instr = currentRoute.instructions[instrIdx];
+        if (instr && instr.distance < 120) {
+            const key = `${instrIdx}_${Math.floor(instr.distance / 10)}`;
+            if (lastSpokenInstruction !== key) {
+                speak(`まもなく、${getTurnText(instr.modifier, instr.type, instr.text)}です`);
+                lastSpokenInstruction = key;
+            }
+        }
+    }
         }
 
         function toggleFollowMode() {
@@ -606,6 +622,37 @@
             let brng = Math.atan2(y, x) * 180 / Math.PI;
             return (brng + 360) % 360;
         }
+		
+		// 現在位置がルートのどの座標インデックス付近かを求める
+function getNearestRouteIndex(lat, lng, coords) {
+    let minDist = Infinity;
+    let idx = 0;
+    const p = L.latLng(lat, lng);
+
+    for (let i = 0; i < coords.length; i++) {
+        const d = map.distance(p, coords[i]);
+        if (d < minDist) {
+            minDist = d;
+            idx = i;
+        }
+    }
+    return idx;
+}
+
+// 座標インデックスから instruction index を取得
+function getInstructionIndexFromCoord(route, coordIdx) {
+    const instrs = route.instructions;
+    let result = 0;
+    for (let i = 0; i < instrs.length; i++) {
+        if (instrs[i].index <= coordIdx) {
+            result = i;
+        } else {
+            break;
+        }
+    }
+    return result;
+}
+
 
         function formatDistance(m) {
             if (m >= 1000) return (m / 1000).toFixed(1) + " km";
