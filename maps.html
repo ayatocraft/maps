@@ -597,20 +597,28 @@
         }
 
         // --- ナビ案内ロジック ---
-        function updateNavDisplay(instructionIndex) {
-            if (!currentRoute) return;
-            const instrs = currentRoute.instructions;
-            if (instructionIndex < instrs.length) {
-                const instr = instrs[instructionIndex];
-                const text = getTurnText(instr.modifier, instr.type, instr.text);
-                document.getElementById('nav-instruction').textContent = text;
-                document.getElementById('nav-turn-icon').innerHTML = `<i class="fas ${getTurnIcon(instr.modifier)}"></i>`;
-                document.getElementById('nav-distance').textContent = formatDistance(instr.distance);
-                
-                const totalDist = currentRoute.summary.totalDistance;
-                document.getElementById('nav-total-dist').textContent = "全長: " + (totalDist/1000).toFixed(1) + " km";
-            }
-        }
+        function updateNavDisplay(instructionIndex, distanceToTurn) {
+    if (!currentRoute) return;
+
+    const instrs = currentRoute.instructions;
+    if (instructionIndex < instrs.length) {
+        const instr = instrs[instructionIndex];
+
+        const text = getTurnText(instr.modifier, instr.type, instr.text);
+        document.getElementById('nav-instruction').textContent = text;
+
+        document.getElementById('nav-turn-icon').innerHTML =
+            `<i class="fas ${getTurnIcon(instr.modifier)}"></i>`;
+
+        // ★ここが変更点
+        document.getElementById('nav-distance').textContent =
+            formatDistance(distanceToTurn);
+
+        const totalDist = currentRoute.summary.totalDistance;
+        document.getElementById('nav-total-dist').textContent =
+            "全長: " + (totalDist / 1000).toFixed(1) + " km";
+    }
+}
 
         // --- ユーティリティ ---
         function calculateHeading(lat1, lng1, lat2, lng2) {
@@ -622,7 +630,17 @@
             let brng = Math.atan2(y, x) * 180 / Math.PI;
             return (brng + 360) % 360;
         }
-		
+		function calcDistanceToNextTurn(route, coordIdx, instrIdx) {
+    const coords = route.coordinates;
+    const instr = route.instructions[instrIdx + 1];
+    if (!instr) return 0;
+
+    let dist = 0;
+    for (let i = coordIdx; i < instr.index; i++) {
+        dist += map.distance(coords[i], coords[i + 1]);
+    }
+    return dist;
+}
 		// 現在位置がルートのどの座標インデックス付近かを求める
 function getNearestRouteIndex(lat, lng, coords) {
     let minDist = Infinity;
