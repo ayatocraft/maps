@@ -699,7 +699,16 @@ function updateNavDisplay(instrIdx) {
 
     document.getElementById('nav-distance').textContent =
         formatDistance(distToNext);
+const bucket = Math.floor(distToNext / 50); // 50m単位
+    const speakKey = `${instrIdx}_${bucket}`;
 
+    if ((distToNext < 320 && distToNext > 280) ||
+        (distToNext < 120 && distToNext > 80)) {
+
+        if (lastSpokenKey !== speakKey) {
+            speak(`およそ${formatDistance(distToNext)}先、${text}です`);
+            lastSpokenKey = speakKey;
+ 
     const total = currentRoute.summary.totalDistance;
     document.getElementById('nav-total-dist').textContent =
         "全長: " + (total / 1000).toFixed(1) + " km";
