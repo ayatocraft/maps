@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Google風ナビ</title>
+<title>Stable Nav</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
@@ -16,57 +16,38 @@ html,body{margin:0;height:100%;font-family:-apple-system;}
  position:absolute;top:10px;left:50%;
  transform:translateX(-50%);
  width:90%;max-width:500px;
- background:white;border-radius:25px;
+ background:white;border-radius:20px;
  padding:10px;z-index:1000;
  display:flex;gap:5px;
  box-shadow:0 4px 10px rgba(0,0,0,.3);
 }
 input{flex:1;border:none;outline:none}
+button{border:none;background:#007aff;color:white;padding:8px;border-radius:10px}
 
 /* ナビヘッダー */
 #navHeader{
- position:absolute;
- top:0;
- width:100%;
- background:#34c759;
- color:white;
- padding:10px;
- z-index:1200;
- display:none;
+ position:absolute;top:0;width:100%;
+ background:#34c759;color:white;
+ padding:10px;display:none;
+ z-index:1100;
 }
-#navHeader .main{
- font-size:18px;
- font-weight:bold;
-}
-#navHeader .sub{
- font-size:14px;
- opacity:0.9;
-}
+#navMain{font-size:18px;font-weight:bold}
+#navSub{font-size:14px}
 
 /* 現在地 */
-.user-icon{
- width:30px;height:30px;position:relative;
-}
-.user-dot{
- width:12px;height:12px;background:#007aff;
- border-radius:50%;border:2px solid white;
- position:absolute;top:50%;left:50%;
- transform:translate(-50%,-50%);
-}
-.user-arrow{
+.user{
  width:0;height:0;
- border-left:8px solid transparent;
- border-right:8px solid transparent;
- border-bottom:16px solid #007aff;
- position:absolute;top:-5px;left:50%;
- transform:translateX(-50%);
+ border-left:10px solid transparent;
+ border-right:10px solid transparent;
+ border-bottom:20px solid #007aff;
 }
 
+/* ボタン */
 #locBtn{
  position:absolute;bottom:120px;right:20px;
  width:60px;height:60px;background:white;
- border-radius:50%;
- display:flex;align-items:center;justify-content:center;
+ border-radius:50%;display:flex;
+ align-items:center;justify-content:center;
  box-shadow:0 4px 10px rgba(0,0,0,.3);
  z-index:1000;
 }
@@ -81,8 +62,8 @@ input{flex:1;border:none;outline:none}
 </div>
 
 <div id="navHeader">
- <div class="main" id="navMain">直進</div>
- <div class="sub" id="navSub">距離</div>
+ <div id="navMain">ナビ開始</div>
+ <div id="navSub"></div>
 </div>
 
 <div id="map"></div>
@@ -91,92 +72,104 @@ input{flex:1;border:none;outline:none}
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-const map=L.map('map').setView([35.68,139.76],15);
+// ===== 初期化 =====
+const map=L.map('map',{zoomControl:true}).setView([35.68,139.76],15);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let current=null, marker=null;
-let routeLine=null, routeCoords=[];
-let steps=[], stepIndex=0;
+let current=null;
+let marker=null;
+let routeLine=null;
+let routeCoords=[];
+let steps=[];
+let stepIndex=0;
 let navigating=false;
-let destGlobal=null;
+let dest=null;
 
-// ===== アイコン =====
-const icon=L.divIcon({
- html:`<div class="user-icon">
- <div class="user-arrow"></div>
- <div class="user-dot"></div></div>`,
- iconSize:[30,30],iconAnchor:[15,15]
-});
-
-// ===== GPS =====
-navigator.geolocation.watchPosition(pos=>{
+// ===== GPS（最重要） =====
+navigator.geolocation.getCurrentPosition(pos=>{
  current=[pos.coords.latitude,pos.coords.longitude];
 
- if(!marker){
-  marker=L.marker(current,{icon}).addTo(map);
- }
+ marker=L.marker(current,{
+  icon:L.divIcon({html:'<div class="user"></div>',iconSize:[20,20]})
+ }).addTo(map);
 
- // ===== スナップ補正 =====
- if(routeCoords.length){
-  current=snapToRoute(current);
- }
+ map.setView(current,17);
 
- marker.setLatLng(current);
+ startWatch();
 
- if(navigating){
-  map.setView(current,18);
-  checkRouteDeviation();
- }
+},()=>{
+ alert("GPS許可して");
+});
 
-},{enableHighAccuracy:true});
+function startWatch(){
+ navigator.geolocation.watchPosition(pos=>{
+  current=[pos.coords.latitude,pos.coords.longitude];
+
+  if(navigating){
+   current=snap(current);
+   map.setView(current,18);
+  }
+
+  marker.setLatLng(current);
+
+  if(navigating) checkRoute();
+
+ },()=>{}, {enableHighAccuracy:true});
+}
 
 // ===== スナップ（15m） =====
-function snapToRoute(pos){
- let minDist=Infinity, nearest=pos;
+function snap(p){
+ if(!routeCoords.length) return p;
 
- routeCoords.forEach(p=>{
-  const d=dist(pos[0],pos[1],p[1],p[0]);
-  if(d<minDist){
-   minDist=d;
-   nearest=[p[1],p[0]];
+ let min=9999, best=p;
+
+ for(let i=0;i<routeCoords.length;i++){
+  const c=routeCoords[i];
+  const d=dist(p[0],p[1],c[1],c[0]);
+  if(d<min){
+   min=d;
+   best=[c[1],c[0]];
   }
- });
+ }
 
- return minDist<15 ? nearest : pos;
+ return min<15 ? best : p;
 }
 
 // ===== 検索 =====
 async function search(){
- const q=document.getElementById("q").value;
- if(!q||!current)return;
+ if(!current) return alert("GPS待って");
 
- const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ const q=document.getElementById("q").value;
+ if(!q) return;
+
+ const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`);
  const data=await res.json();
 
- if(!data.length)return;
+ if(!data.length) return alert("見つからない");
 
- destGlobal=[parseFloat(data[0].lat),parseFloat(data[0].lon)];
+ dest=[parseFloat(data[0].lat),parseFloat(data[0].lon)];
 
- startRoute(destGlobal);
+ getRoute();
 }
 
-// ===== ルート =====
-async function startRoute(dest){
+// ===== ルート取得 =====
+async function getRoute(){
  const url=`https://router.project-osrm.org/route/v1/driving/${current[1]},${current[0]};${dest[1]},${dest[0]}?overview=full&steps=true&geometries=geojson`;
 
  const res=await fetch(url);
  const data=await res.json();
 
- const route=data.routes[0];
+ if(!data.routes) return alert("ルート失敗");
+
+ const r=data.routes[0];
 
  if(routeLine) map.removeLayer(routeLine);
 
- routeLine=L.geoJSON(route.geometry,{color:"#007aff",weight:6}).addTo(map);
+ routeLine=L.geoJSON(r.geometry,{color:"#007aff",weight:5}).addTo(map);
 
- routeCoords=route.geometry.coordinates;
-
- steps=route.legs[0].steps;
+ routeCoords=r.geometry.coordinates;
+ steps=r.legs[0].steps;
  stepIndex=0;
 
  navigating=true;
@@ -185,60 +178,45 @@ async function startRoute(dest){
  document.getElementById("searchBar").style.display="none";
  document.getElementById("navHeader").style.display="block";
 
- speak("ナビ開始");
  updateNav();
 }
 
-// ===== ナビ更新 =====
+// ===== ナビ表示 =====
 function updateNav(){
  if(stepIndex>=steps.length){
-  speak("到着しました");
+  document.getElementById("navMain").innerText="到着";
   return;
  }
 
- const step=steps[stepIndex];
- const text=getText(step);
+ const s=steps[stepIndex];
+
+ let text="直進";
+ if(s.maneuver.type==="turn"){
+  if(s.maneuver.modifier==="left") text="左折";
+  if(s.maneuver.modifier==="right") text="右折";
+ }
 
  document.getElementById("navMain").innerText=text;
- document.getElementById("navSub").innerText=
-  Math.round(step.distance)+"m 先";
-
- speak(text);
-}
-
-// ===== 指示 =====
-function getText(s){
- const t=s.maneuver.type;
- const m=s.maneuver.modifier;
-
- if(t==="turn"){
-  if(m==="left")return "左折";
-  if(m==="right")return "右折";
- }
- if(t==="arrive")return "到着";
- return "直進";
+ document.getElementById("navSub").innerText=Math.round(s.distance)+"m先";
 }
 
 // ===== リルート =====
-function checkRouteDeviation(){
- if(!routeCoords.length)return;
+function checkRoute(){
+ let min=9999;
 
- let min=Infinity;
+ for(let c of routeCoords){
+  const d=dist(current[0],current[1],c[1],c[0]);
+  if(d<min) min=d;
+ }
 
- routeCoords.forEach(p=>{
-  const d=dist(current[0],current[1],p[1],p[0]);
-  if(d<min)min=d;
- });
-
- if(min>30){ // 30m外れたら再計算
-  speak("ルートを再検索します");
-  startRoute(destGlobal);
+ if(min>40){
+  getRoute(); // 再取得
  }
 }
 
 // ===== 進行 =====
 setInterval(()=>{
- if(!current||!steps.length)return;
+ if(!navigating||!steps.length) return;
 
  const loc=steps[stepIndex].maneuver.location;
  const d=dist(current[0],current[1],loc[1],loc[0]);
@@ -259,23 +237,10 @@ function dist(a,b,c,d){
  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ===== 音声 =====
-function speak(t){
- const u=new SpeechSynthesisUtterance(t);
- u.lang="ja-JP";
- speechSynthesis.cancel();
- speechSynthesis.speak(u);
-}
-
-// ===== 現在地 =====
+// ===== 現在地ボタン =====
 document.getElementById("locBtn").onclick=()=>{
  if(current) map.setView(current,18);
 };
-
-// ===== iPhone対策 =====
-document.body.addEventListener("click",()=>{
- speechSynthesis.resume();
-},{once:true});
 </script>
 
 </body>
