@@ -2,95 +2,51 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Nexis Nav</title>
+<title>Nexis Nav Google Core</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-:root{
- --bg:#0b0f14;
- --card:#121821;
- --accent:#00d4ff;
- --text:#e6edf3;
- --sub:#8b98a5;
-}
+html,body{margin:0;height:100%;background:#0b0f14;color:white;font-family:-apple-system;}
+#map{height:100%}
 
-html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system;}
-#map{height:100%;filter:brightness(.85) contrast(1.1);}
-
-/* ===== Nexis Header ===== */
-#navUI{
- position:absolute;top:0;width:100%;
- padding:14px;
- display:none;
- z-index:2000;
+#nav{
+ position:absolute;top:0;width:100%;padding:12px;
+ z-index:2000;display:none;
 }
 .card{
- background:var(--card);
- border-radius:16px;
- padding:14px;
+ background:#121821;border-radius:16px;padding:14px;
  box-shadow:0 10px 30px rgba(0,0,0,.5);
- backdrop-filter:blur(10px);
 }
-#main{font-size:20px;font-weight:600}
-#sub{font-size:13px;color:var(--sub)}
+#main{font-size:20px}
+#sub{font-size:13px;color:#aaa}
 
-#end{
- position:absolute;right:20px;top:20px;
- background:var(--accent);
- border:none;border-radius:10px;
- padding:6px 10px;color:#000;
- font-weight:bold;
-}
-
-/* ===== Search ===== */
 #search{
  position:absolute;top:20px;left:50%;
  transform:translateX(-50%);
- width:92%;max-width:500px;
- display:flex;gap:8px;
+ width:90%;display:flex;gap:5px;
  z-index:1000;
 }
-#search input{
- flex:1;padding:12px;
- border-radius:14px;border:none;
- background:var(--card);color:var(--text);
-}
-#search button{
- padding:12px;border:none;border-radius:14px;
- background:var(--accent);color:#000;font-weight:bold;
-}
+input{flex:1;padding:10px;border:none;border-radius:12px;background:#1b2430;color:white}
 
-/* ===== User Marker ===== */
-.marker{
+/* Google風矢印 */
+.arrow{
  width:0;height:0;
  border-left:10px solid transparent;
  border-right:10px solid transparent;
- border-bottom:20px solid var(--accent);
+ border-bottom:22px solid #2ea3ff;
  transform-origin:50% 70%;
  position:relative;
 }
-.marker::after{
+.arrow::after{
  content:"";
  position:absolute;
  left:-12px;top:-2px;
  border-left:12px solid transparent;
  border-right:12px solid transparent;
- border-bottom:24px solid #000;
+ border-bottom:26px solid white;
  z-index:-1;
- filter:blur(2px);
-}
-
-/* ===== Button ===== */
-#loc{
- position:absolute;bottom:120px;right:20px;
- width:60px;height:60px;
- background:var(--card);
- border-radius:50%;
- display:flex;align-items:center;justify-content:center;
- box-shadow:0 10px 20px rgba(0,0,0,.5);
- z-index:1000;
 }
 </style>
 </head>
@@ -98,32 +54,31 @@ html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-famil
 <body>
 
 <div id="search">
- <input id="dest" placeholder="目的地 or 長押し">
- <button onclick="search()">GO</button>
+ <input id="dest" placeholder="目的地">
+ <button onclick="startSearch()">GO</button>
 </div>
 
-<div id="navUI">
+<div id="nav">
  <div class="card">
   <div id="main">--</div>
   <div id="sub">--</div>
  </div>
- <button id="end" onclick="stopNav()">終了</button>
 </div>
 
 <div id="map"></div>
-<div id="loc">📍</div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 // ===== STATE =====
-const state={
+const S={
  pos:null,
+ snapped:null,
  heading:0,
- navigating:false,
- route:null,
+ route:[],
  steps:[],
- stepIndex:0,
+ step:0,
+ navigating:false,
  zoom:17,
  dest:null
 };
@@ -132,147 +87,213 @@ const state={
 const map=L.map('map',{zoomControl:false}).setView([35.68,139.76],15);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-map.on("zoomend",()=>state.zoom=map.getZoom());
+map.on("zoomend",()=>S.zoom=map.getZoom());
 
 // ===== MARKER =====
 const icon=L.divIcon({
- html:`<div id="arrow" class="marker"></div>`,
+ html:`<div id="arrow" class="arrow"></div>`,
  iconSize:[30,30],iconAnchor:[15,15]
 });
-let marker=null;
+let marker;
 
-// ===== GPS LOOP =====
-navigator.geolocation.watchPosition(pos=>{
- state.pos=[pos.coords.latitude,pos.coords.longitude];
+// ===== GPS =====
+navigator.geolocation.watchPosition(p=>{
+ S.pos=[p.coords.latitude,p.coords.longitude];
 
  if(!marker){
-  marker=L.marker(state.pos,{icon}).addTo(map);
+  marker=L.marker(S.pos,{icon}).addTo(map);
  }
 
- marker.setLatLng(state.pos);
-},()=>{}, {enableHighAccuracy:true});
+ updateCore();
+
+},{enableHighAccuracy:true});
 
 // ===== COMPASS =====
 window.addEventListener("deviceorientationabsolute",e=>{
- if(e.alpha!=null){
-  state.heading=e.alpha;
- }
+ if(e.alpha!=null) S.heading=e.alpha;
 });
 
-// ===== MAIN LOOP =====
-function loop(){
- if(state.pos){
-  if(state.navigating){
-   map.setView(state.pos,state.zoom,{animate:false});
-   updateNav();
-  }
-  rotate();
- }
- requestAnimationFrame(loop);
-}
-loop();
+// ===== 核心処理 =====
+function updateCore(){
+ if(!S.pos) return;
 
-// ===== ROTATE =====
-function rotate(){
- const el=document.getElementById("arrow");
- if(el) el.style.transform=`rotate(${state.heading}deg)`;
-}
+ if(S.navigating){
+  S.snapped=snap(S.pos);
+  marker.setLatLng(S.snapped);
 
-// ===== SEARCH =====
-async function search(){
- const q=document.getElementById("dest").value;
- if(!q)return;
+  camera();
+  navUpdate();
 
- const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- const d=await r.json();
- if(!d.length)return;
-
- startNav([parseFloat(d[0].lat),parseFloat(d[0].lon)]);
-}
-
-// ===== LONG PRESS =====
-map.on("contextmenu",e=>{
- startNav([e.latlng.lat,e.latlng.lng]);
-});
-
-// ===== START NAV =====
-async function startNav(dest){
- state.dest=dest;
-
- const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${state.pos[1]},${state.pos[0]};${dest[1]},${dest[0]}?overview=full&steps=true&geometries=geojson`);
- const json=await r.json();
-
- state.route=json.routes[0];
- state.steps=json.routes[0].legs[0].steps;
- state.stepIndex=0;
- state.navigating=true;
-
- draw();
-
- document.getElementById("search").style.display="none";
- document.getElementById("navUI").style.display="block";
-}
-
-// ===== DRAW =====
-let line;
-function draw(){
- if(line) map.removeLayer(line);
- line=L.geoJSON(state.route.geometry,{color:"#00d4ff",weight:6}).addTo(map);
-}
-
-// ===== NAV UPDATE =====
-function updateNav(){
- if(!state.steps.length)return;
-
- let remain=0;
- for(let i=state.stepIndex;i<state.steps.length;i++){
-  remain+=state.steps[i].distance;
+  if(offRoute()) reroute();
+ }else{
+  marker.setLatLng(S.pos);
  }
 
- const s=state.steps[state.stepIndex];
+ rotate();
+}
 
- document.getElementById("main").innerText=getText(s);
+// ===== カメラ =====
+function camera(){
+ map.setView(S.snapped,S.zoom,{animate:false});
+}
+
+// ===== スナップ =====
+function snap(p){
+ let best=p,min=Infinity;
+
+ for(let i=0;i<S.route.length-1;i++){
+  const proj=project(p,S.route[i],S.route[i+1]);
+  const d=dist(p[0],p[1],proj[0],proj[1]);
+  if(d<min){min=d;best=proj;}
+ }
+ return best;
+}
+
+// ===== 線分投影 =====
+function project(p,a,b){
+ const ax=a[1],ay=a[0];
+ const bx=b[1],by=b[0];
+ const px=p[1],py=p[0];
+
+ const t=((px-ax)*(bx-ax)+(py-ay)*(by-ay))/
+ ((bx-ax)**2+(by-ay)**2);
+
+ const clamped=Math.max(0,Math.min(1,t));
+
+ return [
+  ay+(by-ay)*clamped,
+  ax+(bx-ax)*clamped
+ ];
+}
+
+// ===== ナビ更新 =====
+function navUpdate(){
+ const step=S.steps[S.step];
+ if(!step) return;
+
+ const d=routeDistToStep();
+
+ document.getElementById("main").innerText=
+  buildText(step,d);
+
  document.getElementById("sub").innerText=
-  fmt(s.distance)+"先 / 残り "+fmt(remain);
+  "残り "+fmt(totalRemain());
 
  advance();
 }
 
-// ===== STEP =====
-function advance(){
- const loc=state.steps[state.stepIndex].maneuver.location;
- const d=dist(state.pos[0],state.pos[1],loc[1],loc[0]);
-
- if(d<20){
-  state.stepIndex++;
+// ===== ルート距離 =====
+function routeDistToStep(){
+ let sum=0;
+ for(let i=S.step;i<S.route.length-1;i++){
+  sum+=dist(
+   S.route[i][1],S.route[i][0],
+   S.route[i+1][1],S.route[i+1][0]
+  );
  }
+ return sum;
 }
 
-// ===== TEXT =====
-function getText(s){
+// ===== 残距離 =====
+function totalRemain(){
+ let s=0;
+ for(let i=S.step;i<S.steps.length;i++){
+  s+=S.steps[i].distance;
+ }
+ return s;
+}
+
+// ===== 進行 =====
+function advance(){
+ const step=S.steps[S.step];
+ const loc=step.maneuver.location;
+
+ const d=dist(S.snapped[0],S.snapped[1],loc[1],loc[0]);
+
+ if(d<20) S.step++;
+}
+
+// ===== 逆走＋逸脱 =====
+function offRoute(){
+ const d=dist(S.pos[0],S.pos[1],S.snapped[0],S.snapped[1]);
+ return d>30 || !forward();
+}
+
+function forward(){
+ const next=S.steps[S.step]?.maneuver.location;
+ if(!next) return true;
+
+ const b=bearing(S.snapped,next);
+ return Math.abs(b-S.heading)<90;
+}
+
+// ===== 再ルート =====
+function reroute(){
+ startNav(S.dest);
+}
+
+// ===== テキスト =====
+function buildText(s,d){
+ const base=fmt(d)+"先 ";
+
  const t=s.maneuver.type;
  const m=s.maneuver.modifier||"";
 
  if(t==="turn"){
-  if(m==="right")return "右に曲がる";
-  if(m==="left")return "左に曲がる";
+  if(m==="right")return base+"右に曲がる";
+  if(m==="left")return base+"左に曲がる";
  }
  if(t==="arrive")return "到着";
- return "直進";
+
+ return base+"直進";
 }
 
-// ===== STOP =====
-function stopNav(){
- state.navigating=false;
- document.getElementById("navUI").style.display="none";
- document.getElementById("search").style.display="flex";
+// ===== 検索 =====
+async function startSearch(){
+ const q=document.getElementById("dest").value;
+ const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ const d=await r.json();
+ if(!d.length)return;
+
+ startNav([+d[0].lat,+d[0].lon]);
+}
+
+// ===== 開始 =====
+async function startNav(dest){
+ S.dest=dest;
+
+ const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${S.pos[1]},${S.pos[0]};${dest[1]},${dest[0]}?overview=full&steps=true&geometries=geojson`);
+ const j=await r.json();
+
+ S.route=j.routes[0].geometry.coordinates;
+ S.steps=j.routes[0].legs[0].steps;
+ S.step=0;
+ S.navigating=true;
+
+ draw(j.routes[0]);
+
+ document.getElementById("search").style.display="none";
+ document.getElementById("nav").style.display="block";
+}
+
+// ===== 描画 =====
+let line;
+function draw(r){
  if(line) map.removeLayer(line);
+ line=L.geoJSON(r.geometry,{color:"#2ea3ff",weight:6}).addTo(map);
 }
 
-// ===== UTILS =====
+// ===== 回転 =====
+function rotate(){
+ document.getElementById("arrow").style.transform=
+  `rotate(${S.heading}deg)`;
+}
+
+// ===== utils =====
 function fmt(m){
  return m>1000?(m/1000).toFixed(1)+"km":Math.round(m)+"m";
 }
+
 function dist(a,b,c,d){
  const R=6371000;
  const dLat=(c-a)*Math.PI/180;
@@ -282,10 +303,13 @@ function dist(a,b,c,d){
  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ===== LOC BTN =====
-document.getElementById("loc").onclick=()=>{
- if(state.pos) map.setView(state.pos,state.zoom);
-};
+function bearing(a,b){
+ const y=Math.sin((b[1]-a[1])*Math.PI/180)*Math.cos(b[0]*Math.PI/180);
+ const x=Math.cos(a[0]*Math.PI/180)*Math.sin(b[0]*Math.PI/180)-
+ Math.sin(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*
+ Math.cos((b[1]-a[1])*Math.PI/180);
+ return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
 </script>
 
 </body>
