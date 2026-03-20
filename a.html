@@ -2,68 +2,94 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Nav Pro</title>
+<title>Nexis Nav</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-html,body{margin:0;height:100%;font-family:-apple-system;}
-#map{height:100%}
+:root{
+ --bg:#0b0f14;
+ --card:#121821;
+ --accent:#00d4ff;
+ --text:#e6edf3;
+ --sub:#8b98a5;
+}
 
-/* ===== ヘッダー ===== */
-#navHeader{
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system;}
+#map{height:100%;filter:brightness(.85) contrast(1.1);}
+
+/* ===== Nexis Header ===== */
+#navUI{
  position:absolute;top:0;width:100%;
- background:#34c759;color:white;
- padding:12px;
- z-index:2000;
+ padding:14px;
  display:none;
+ z-index:2000;
 }
-#navMain{font-size:18px;font-weight:bold}
-#navSub{font-size:13px}
+.card{
+ background:var(--card);
+ border-radius:16px;
+ padding:14px;
+ box-shadow:0 10px 30px rgba(0,0,0,.5);
+ backdrop-filter:blur(10px);
+}
+#main{font-size:20px;font-weight:600}
+#sub{font-size:13px;color:var(--sub)}
 
-#endBtn{
- position:absolute;right:10px;top:10px;
- background:white;color:#34c759;
+#end{
+ position:absolute;right:20px;top:20px;
+ background:var(--accent);
  border:none;border-radius:10px;
- padding:6px 10px;
+ padding:6px 10px;color:#000;
+ font-weight:bold;
 }
 
-/* ===== 検索 ===== */
-#searchBar{
- position:absolute;top:10px;left:50%;
+/* ===== Search ===== */
+#search{
+ position:absolute;top:20px;left:50%;
  transform:translateX(-50%);
- width:95%;max-width:520px;
- background:white;border-radius:20px;
- padding:10px;z-index:1000;
- display:flex;
+ width:92%;max-width:500px;
+ display:flex;gap:8px;
+ z-index:1000;
 }
-input{flex:1;border:none}
+#search input{
+ flex:1;padding:12px;
+ border-radius:14px;border:none;
+ background:var(--card);color:var(--text);
+}
+#search button{
+ padding:12px;border:none;border-radius:14px;
+ background:var(--accent);color:#000;font-weight:bold;
+}
 
-/* ===== 三角 ===== */
-.userWrap{width:40px;height:40px;display:flex;justify-content:center;align-items:center;}
-.user{
- border-left:12px solid transparent;
- border-right:12px solid transparent;
- border-bottom:24px solid red;
- position:relative;
+/* ===== User Marker ===== */
+.marker{
+ width:0;height:0;
+ border-left:10px solid transparent;
+ border-right:10px solid transparent;
+ border-bottom:20px solid var(--accent);
  transform-origin:50% 70%;
+ position:relative;
 }
-.user::after{
+.marker::after{
  content:"";
  position:absolute;
- left:-14px;top:-2px;
- border-left:14px solid transparent;
- border-right:14px solid transparent;
- border-bottom:28px solid white;
+ left:-12px;top:-2px;
+ border-left:12px solid transparent;
+ border-right:12px solid transparent;
+ border-bottom:24px solid #000;
  z-index:-1;
+ filter:blur(2px);
 }
 
-#locBtn{
+/* ===== Button ===== */
+#loc{
  position:absolute;bottom:120px;right:20px;
- width:60px;height:60px;background:white;
+ width:60px;height:60px;
+ background:var(--card);
  border-radius:50%;
  display:flex;align-items:center;justify-content:center;
+ box-shadow:0 10px 20px rgba(0,0,0,.5);
  z-index:1000;
 }
 </style>
@@ -71,106 +97,89 @@ input{flex:1;border:none}
 
 <body>
 
-<div id="searchBar">
- <input id="dest" placeholder="目的地 or 長押しで設定">
- <button onclick="startNavByText()">GO</button>
+<div id="search">
+ <input id="dest" placeholder="目的地 or 長押し">
+ <button onclick="search()">GO</button>
 </div>
 
-<div id="navHeader">
- <button id="endBtn" onclick="endNav()">終了</button>
- <div id="navMain">--</div>
- <div id="navSub">--</div>
+<div id="navUI">
+ <div class="card">
+  <div id="main">--</div>
+  <div id="sub">--</div>
+ </div>
+ <button id="end" onclick="stopNav()">終了</button>
 </div>
 
 <div id="map"></div>
-<div id="locBtn">📍</div>
+<div id="loc">📍</div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
+// ===== STATE =====
+const state={
+ pos:null,
+ heading:0,
+ navigating:false,
+ route:null,
+ steps:[],
+ stepIndex:0,
+ zoom:17,
+ dest:null
+};
+
+// ===== MAP =====
 const map=L.map('map',{zoomControl:false}).setView([35.68,139.76],15);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let current=null, marker=null;
-let heading=0;
-let navigating=false;
-let route=[],steps=[],stepIndex=0;
-let destGlobal=null;
-let userZoom=15;
+map.on("zoomend",()=>state.zoom=map.getZoom());
 
-// ===== ズーム保持 =====
-map.on("zoomend",()=>{
- userZoom=map.getZoom();
-});
-
-// ===== マーカー =====
+// ===== MARKER =====
 const icon=L.divIcon({
- html:`<div class="userWrap"><div id="arrow" class="user"></div></div>`,
- iconSize:[40,40],iconAnchor:[20,20]
+ html:`<div id="arrow" class="marker"></div>`,
+ iconSize:[30,30],iconAnchor:[15,15]
 });
+let marker=null;
 
-// ===== GPS =====
+// ===== GPS LOOP =====
 navigator.geolocation.watchPosition(pos=>{
- current=[pos.coords.latitude,pos.coords.longitude];
+ state.pos=[pos.coords.latitude,pos.coords.longitude];
 
  if(!marker){
-  marker=L.marker(current,{icon}).addTo(map);
-  map.setView(current,userZoom);
- }else{
-  marker.setLatLng(current);
+  marker=L.marker(state.pos,{icon}).addTo(map);
  }
 
- if(navigating){
-  map.setView(current,userZoom,{animate:true}); // ←ズーム維持
-  updateNav(); // ←リアルタイム更新
-  checkRoute();
- }
+ marker.setLatLng(state.pos);
+},()=>{}, {enableHighAccuracy:true});
 
- rotate();
-
-},{enableHighAccuracy:true});
-
-// ===== コンパス =====
+// ===== COMPASS =====
 window.addEventListener("deviceorientationabsolute",e=>{
  if(e.alpha!=null){
-  heading=e.alpha;
+  state.heading=e.alpha;
+ }
+});
+
+// ===== MAIN LOOP =====
+function loop(){
+ if(state.pos){
+  if(state.navigating){
+   map.setView(state.pos,state.zoom,{animate:false});
+   updateNav();
+  }
   rotate();
  }
-});
+ requestAnimationFrame(loop);
+}
+loop();
+
+// ===== ROTATE =====
 function rotate(){
  const el=document.getElementById("arrow");
- if(el) el.style.transform=`rotate(${heading}deg)`;
+ if(el) el.style.transform=`rotate(${state.heading}deg)`;
 }
 
-// ===== 距離 =====
-function formatDist(m){
- return m>=1000?(m/1000).toFixed(1)+"km":Math.round(m)+"m";
-}
-
-// ===== ナビ更新（リアルタイム化） =====
-function updateNav(){
- if(!steps.length)return;
-
- let remain=0;
- for(let i=stepIndex;i<steps.length;i++){
-  remain+=steps[i].distance;
- }
-
- const next=steps[stepIndex];
- document.getElementById("navMain").innerText=
-  getInstruction(next);
-
- document.getElementById("navSub").innerText=
-  formatDist(next.distance)+"先 / 残り "+formatDist(remain);
-}
-
-// ===== 長押しで目的地 =====
-map.on("contextmenu",e=>{
- startNav(e.latlng.lat,e.latlng.lng);
-});
-
-// ===== 検索 =====
-async function startNavByText(){
+// ===== SEARCH =====
+async function search(){
  const q=document.getElementById("dest").value;
  if(!q)return;
 
@@ -178,44 +187,69 @@ async function startNavByText(){
  const d=await r.json();
  if(!d.length)return;
 
- startNav(parseFloat(d[0].lat),parseFloat(d[0].lon));
+ startNav([parseFloat(d[0].lat),parseFloat(d[0].lon)]);
 }
 
-// ===== ナビ開始 =====
-async function startNav(lat,lon){
- destGlobal=[lat,lon];
+// ===== LONG PRESS =====
+map.on("contextmenu",e=>{
+ startNav([e.latlng.lat,e.latlng.lng]);
+});
 
- const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${current[1]},${current[0]};${lon},${lat}?overview=full&steps=true&geometries=geojson`);
+// ===== START NAV =====
+async function startNav(dest){
+ state.dest=dest;
+
+ const r=await fetch(`https://router.project-osrm.org/route/v1/driving/${state.pos[1]},${state.pos[0]};${dest[1]},${dest[0]}?overview=full&steps=true&geometries=geojson`);
  const json=await r.json();
 
- route=json.routes[0].geometry.coordinates;
- steps=json.routes[0].legs[0].steps;
- stepIndex=0;
- navigating=true;
+ state.route=json.routes[0];
+ state.steps=json.routes[0].legs[0].steps;
+ state.stepIndex=0;
+ state.navigating=true;
 
- draw(json.routes[0]);
+ draw();
 
- document.getElementById("searchBar").style.display="none";
- document.getElementById("navHeader").style.display="block";
+ document.getElementById("search").style.display="none";
+ document.getElementById("navUI").style.display="block";
 }
 
-// ===== 描画 =====
+// ===== DRAW =====
 let line;
-function draw(r){
+function draw(){
  if(line) map.removeLayer(line);
- line=L.geoJSON(r.geometry,{color:"#007aff",weight:6}).addTo(map);
+ line=L.geoJSON(state.route.geometry,{color:"#00d4ff",weight:6}).addTo(map);
 }
 
-// ===== 終了 =====
-function endNav(){
- navigating=false;
- document.getElementById("navHeader").style.display="none";
- document.getElementById("searchBar").style.display="flex";
- if(line) map.removeLayer(line);
+// ===== NAV UPDATE =====
+function updateNav(){
+ if(!state.steps.length)return;
+
+ let remain=0;
+ for(let i=state.stepIndex;i<state.steps.length;i++){
+  remain+=state.steps[i].distance;
+ }
+
+ const s=state.steps[state.stepIndex];
+
+ document.getElementById("main").innerText=getText(s);
+ document.getElementById("sub").innerText=
+  fmt(s.distance)+"先 / 残り "+fmt(remain);
+
+ advance();
 }
 
-// ===== 案内文 =====
-function getInstruction(s){
+// ===== STEP =====
+function advance(){
+ const loc=state.steps[state.stepIndex].maneuver.location;
+ const d=dist(state.pos[0],state.pos[1],loc[1],loc[0]);
+
+ if(d<20){
+  state.stepIndex++;
+ }
+}
+
+// ===== TEXT =====
+function getText(s){
  const t=s.maneuver.type;
  const m=s.maneuver.modifier||"";
 
@@ -227,19 +261,18 @@ function getInstruction(s){
  return "直進";
 }
 
-// ===== リルート =====
-function checkRoute(){
- let min=999;
- route.forEach(c=>{
-  const d=dist(current[0],current[1],c[1],c[0]);
-  if(d<min)min=d;
- });
- if(min>40){
-  startNav(destGlobal[0],destGlobal[1]);
- }
+// ===== STOP =====
+function stopNav(){
+ state.navigating=false;
+ document.getElementById("navUI").style.display="none";
+ document.getElementById("search").style.display="flex";
+ if(line) map.removeLayer(line);
 }
 
-// ===== 距離 =====
+// ===== UTILS =====
+function fmt(m){
+ return m>1000?(m/1000).toFixed(1)+"km":Math.round(m)+"m";
+}
 function dist(a,b,c,d){
  const R=6371000;
  const dLat=(c-a)*Math.PI/180;
@@ -249,9 +282,9 @@ function dist(a,b,c,d){
  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ===== 現在地ボタン =====
-document.getElementById("locBtn").onclick=()=>{
- if(current) map.setView(current,userZoom);
+// ===== LOC BTN =====
+document.getElementById("loc").onclick=()=>{
+ if(state.pos) map.setView(state.pos,state.zoom);
 };
 </script>
 
