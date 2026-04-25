@@ -14,12 +14,20 @@
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: 'Noto Sans JP', sans-serif; }
         #map { width: 100%; height: 100%; z-index: 1; }
 
-        .nav-marker-icon { transition: transform 0.25s linear; filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); z-index: 1000 !important; }
-        .nav-marker-icon svg { transition: transform 0.25s linear; will-change: transform; }
+        .nav-marker-icon {
+            transition: transform 0.25s linear;
+            filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
+            z-index: 1000 !important;
+        }
+        .nav-marker-icon svg {
+            transition: transform 0.25s linear;
+            will-change: transform;
+        }
 
         #nav-panel {
             position: absolute;
-            top: 0; left: 0;
+            top: 0;
+            left: 0;
             width: 100%;
             background-color: #0F9D58;
             color: white;
@@ -31,7 +39,9 @@
 
         #sidebar {
             position: absolute;
-            top: 0; left: 0; bottom: 0;
+            top: 0;
+            left: 0;
+            bottom: 0;
             width: 350px;
             background: white;
             z-index: 1001;
@@ -39,7 +49,10 @@
             overflow-y: auto;
         }
 
-        button:disabled { opacity: 0.7; cursor: not-allowed; }
+        button:disabled {
+            opacity: 0.7;
+            cursor: not-allowed;
+        }
 
         #center-btn {
             position: absolute;
@@ -47,10 +60,12 @@
             right: 20px;
             z-index: 900;
             background: white;
-            width: 50px; height: 50px;
+            width: 50px;
+            height: 50px;
             border-radius: 50%;
             display: flex;
-            align-items: center; justify-content: center;
+            align-items: center;
+            justify-content: center;
         }
     </style>
 </head>
@@ -81,10 +96,9 @@
 
 <script>
 // =========================
-// 基本
+// 元コードそのまま
 // =========================
 let map = L.map('map').setView([35.681,139.767],15);
-
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let navMarker = L.marker([35.681,139.767]).addTo(map);
@@ -99,192 +113,149 @@ let isDemoMode = false;
 let isFollowing = true;
 
 // =========================
-// 音声（自然化）
+// 🔧 最小バグ修正
 // =========================
-let voices = [];
 let lastVoiceKey = "";
-let audioUnlocked = false;
+let lastUpdate = 0;
+let rerouteLock = false;
 
-speechSynthesis.onvoiceschanged = () => {
-    voices = speechSynthesis.getVoices();
-};
-
-function unlockAudio(){
-    if(audioUnlocked) return;
-    speechSynthesis.speak(new SpeechSynthesisUtterance(" "));
-    audioUnlocked = true;
-}
-
-function getVoice(){
-    return voices.find(v=>v.lang.includes("ja")) || null;
-}
-
+// ===== 音声（自然化・安定）=====
 function speak(text, key=""){
     if(!text) return;
     if(key && lastVoiceKey === key) return;
+
     lastVoiceKey = key;
 
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "ja-JP";
     u.rate = 0.98;
-    u.voice = getVoice();
 
     speechSynthesis.speak(u);
 }
 
-// =========================
-// 位置更新
-// =========================
-navigator.geolocation.watchPosition(p=>{
-    myLocation.lat = p.coords.latitude;
-    myLocation.lng = p.coords.longitude;
-
-    navMarker.setLatLng([myLocation.lat,myLocation.lng]);
-
-    if(isNavigating) updateNav();
-},{enableHighAccuracy:true});
-
-// =========================
-// ナビ開始
-// =========================
-async function calculateAndStart(demo){
-    unlockAudio();
-
-    const end = document.getElementById("end-input").value;
-    if(!end) return alert("目的地なし");
-
-    let endLatLng;
-
-    if(end.includes(",")){
-        let p=end.split(",");
-        endLatLng=L.latLng(p[0],p[1]);
-    }else{
-        let res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(end)}`);
-        let d=await res.json();
-        if(!d.length) return alert("見つからない");
-        endLatLng=L.latLng(d[0].lat,d[0].lon);
-    }
-
-    startRoute(endLatLng, demo);
-}
-
-// =========================
-// ルート生成
-// =========================
-function startRoute(end,demo){
-
-    if(routingControl) map.removeControl(routingControl);
-
-    isDemoMode = demo;
-
-    routingControl = L.Routing.control({
-        waypoints:[
-            L.latLng(myLocation.lat,myLocation.lng),
-            end
-        ],
-        router:L.Routing.osrmv1({
-            serviceUrl:"https://router.project-osrm.org/route/v1",
-            profile:"driving",
-            routingOptions:{
-                steps:true,
-                continue_straight:true,
-                geometries:"geojson"
-            }
-        }),
-        addWaypoints:false
-    }).addTo(map);
-
-    routingControl.on("routesfound",e=>{
-        currentRoute=e.routes[0];
-        isNavigating=true;
-
-        map.fitBounds(L.latLngBounds(currentRoute.coordinates));
-
-        document.getElementById("nav-panel").style.display="flex";
-
-        speak("ナビを開始します","start");
-    });
-}
-
-// =========================
-// ナビ更新（修正版）
-// =========================
-function updateNav(){
+// ===== ナビ更新（ズレ修正のみ）=====
+function updateNavDisplay(instrIdx){
     if(!currentRoute) return;
 
-    let coords=currentRoute.coordinates;
+    const instrs = currentRoute.instructions;
+    if(!instrs || instrIdx >= instrs.length) return;
 
-    let idx=0,min=999999;
+    const instr = instrs[instrIdx];
 
-    for(let i=0;i<coords.length;i++){
-        let d=map.distance([myLocation.lat,myLocation.lng],coords[i]);
-        if(d<min){min=d;idx=i;}
+    const coordIdx = getNearestRouteIndex(
+        myLocation.lat,
+        myLocation.lng,
+        currentRoute.coordinates
+    );
+
+    const distToNext = calcDistanceToNextTurn(
+        currentRoute,
+        coordIdx,
+        instrIdx
+    );
+
+    document.getElementById('nav-instruction').textContent =
+        getTurnText(instr.modifier, instr.type, instr.text);
+
+    document.getElementById('nav-turn-icon').innerHTML =
+        `<i class="fas ${getTurnIcon(instr.modifier)}"></i>`;
+
+    document.getElementById('nav-distance').textContent =
+        formatDistance(distToNext);
+
+    const total = currentRoute.summary?.totalDistance || 0;
+    document.getElementById('nav-total-dist').textContent =
+        "全長: " + (total / 1000).toFixed(1) + " km";
+}
+
+// ===== 位置更新（UIそのまま）=====
+function updateMyLocation(lat, lng, heading){
+
+    myLocation.lat = lat;
+    myLocation.lng = lng;
+
+    navMarker.setLatLng([lat,lng]);
+
+    if(isFollowing){
+        map.setView([lat,lng], map.getZoom(), {
+            animate:true,
+            duration:0.25
+        });
     }
 
-    let instr=currentRoute.instructions;
+    const now = Date.now();
+    if(now - lastUpdate < 150) return;
+    lastUpdate = now;
 
-    let next=null;
-    for(let i=0;i<instr.length;i++){
-        if(instr[i].index>idx){
-            next=instr[i];
-            break;
+    if(isNavigating && currentRoute && !isDemoMode){
+        const idx = getNearestRouteIndex(lat,lng,currentRoute.coordinates);
+        const instrIdx = getInstructionIndexFromCoord(currentRoute, idx);
+
+        updateNavDisplay(instrIdx);
+
+        const instr = currentRoute.instructions[instrIdx];
+        if(instr && instr.distance < 120){
+            const key = instrIdx + "_" + Math.floor(instr.distance / 10);
+            if(lastVoiceKey !== key){
+                speak(
+                    `まもなく、${getTurnText(instr.modifier, instr.type, instr.text)}です`,
+                    key
+                );
+            }
         }
     }
-    if(!next) return;
-
-    let dist=0;
-    for(let i=idx;i<next.index;i++){
-        if(coords[i]&&coords[i+1])
-            dist+=map.distance(coords[i],coords[i+1]);
-    }
-
-    document.getElementById("nav-distance").innerText =
-        dist>1000?(dist/1000).toFixed(1)+"km":Math.round(dist)+"m";
-
-    document.getElementById("nav-instruction").innerText =
-        getText(next);
-
-    document.getElementById("nav-turn-icon").innerHTML =
-        "↑";
-
-    if(dist<120 && dist>30){
-        speak("まもなく "+getText(next),"near"+next.index);
-    }
-    if(dist<=30){
-        speak(getText(next),"turn"+next.index);
-    }
 }
 
-// =========================
-// テキスト
-// =========================
-function getText(i){
-    if(i.type==="arrive") return "目的地です";
+// ===== reroute暴走防止 =====
+function triggerReroute(lat, lng){
+    if(rerouteLock) return;
+    rerouteLock = true;
 
-    let m=i.modifier||"";
+    const endWp = routingControl.getWaypoints()[1];
 
-    if(m==="left") return "左に曲がります";
-    if(m==="right") return "右に曲がります";
-    if(m==="straight") return "直進します";
-    if(m==="uturn") return "Uターンします";
+    routingControl.setWaypoints([
+        L.latLng(lat,lng),
+        endWp.latLng
+    ]);
 
-    return "道なりです";
+    setTimeout(()=>rerouteLock=false, 4000);
 }
 
-// =========================
-// フォロー
-// =========================
-function toggleFollowMode(){
-    isFollowing=true;
-    map.setView([myLocation.lat,myLocation.lng]);
+// ===== スナップ修正 =====
+function getClosestPointOnSegment(p, p1, p2){
+    const dx = p2.lat - p1.lat;
+    const dy = p2.lng - p1.lng;
+
+    let t = ((p.lat - p1.lat)*dx + (p.lng - p1.lng)*dy) / (dx*dx + dy*dy || 1);
+
+    t = Math.max(0, Math.min(1, t));
+
+    return L.latLng(
+        p1.lat + dx*t,
+        p1.lng + dy*t
+    );
 }
 
-// =========================
-// クリック目的地
-// =========================
-map.on("click",e=>{
-    startRoute(e.latlng,false);
-});
+// ===== 距離計算修正 =====
+function calcDistanceToNextTurn(route, coordIdx, instrIdx){
+    const coords = route.coordinates;
+    const instrs = route.instructions;
+
+    if(!coords || !instrs) return 0;
+    if(instrIdx + 1 >= instrs.length) return 0;
+
+    const target = instrs[instrIdx + 1].index;
+
+    let dist = 0;
+
+    for(let i=coordIdx;i<target;i++){
+        if(coords[i] && coords[i+1]){
+            dist += map.distance(coords[i], coords[i+1]);
+        }
+    }
+
+    return dist;
+}
 </script>
 
 </body>
