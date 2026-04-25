@@ -2,106 +2,234 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<title>Nexis Navigator</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Googleマップ風ナビ</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
 <style>
-  html, body { margin:0; padding:0; height:100%; font-family:sans-serif; }
-  #map { height:100%; }
-  .search-box {
-    position:absolute; top:10px; left:50%; transform:translateX(-50%);
-    z-index:1000; display:flex; width:320px;
-  }
-  .search-box input {
-    flex:1; padding:6px 10px; border-radius:3px 0 0 3px; border:none; outline:none; box-shadow:0 1px 4px rgba(0,0,0,0.3);
-  }
-  .search-box button {
-    padding:6px 10px; border:none; border-radius:0 3px 3px 0; background:#4285F4; color:white; cursor:pointer;
-  }
-  #directions {
-    position:absolute; bottom:80px; left:10px; right:10px; z-index:1000;
-    background: rgba(0,0,0,0.6); color:white; padding:10px; border-radius:5px; max-height:200px; overflow-y:auto;
-    font-size:14px;
-  }
-  .leaflet-routing-container { display:none; } /* デフォルトUI非表示 */
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto;
+}
+
+#map {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 100%;
+}
+
+/* 上部ナビバー */
+#navBox {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #1faa59;
+  color: white;
+  padding: 15px;
+  z-index: 1000;
+  font-size: 18px;
+}
+
+#distance {
+  font-size: 28px;
+  font-weight: bold;
+}
+
+/* サイドUI */
+#panel {
+  position: absolute;
+  left: 0;
+  top: 100px;
+  width: 300px;
+  background: white;
+  padding: 15px;
+  z-index: 1000;
+  border-radius: 10px;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  margin-top: 5px;
+  margin-bottom: 10px;
+}
+
+/* ボタン */
+button {
+  padding: 10px;
+  width: 100%;
+  border: none;
+  background: #007aff;
+  color: white;
+  border-radius: 8px;
+}
+
+/* 現在地ボタン */
+#locBtn {
+  position: absolute;
+  right: 15px;
+  bottom: 20px;
+  background: white;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
 </style>
 </head>
+
 <body>
 
-<div class="search-box">
-  <input id="search-input" placeholder="目的地を入力" />
-  <button id="search-btn">検索</button>
+<div id="navBox">
+  ↑ <span id="distance">-- km</span><br>
+  <span id="instruction">ルート未設定</span>
 </div>
-<div id="directions"></div>
-<div id="map"></div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
-<script src="https://unpkg.com/leaflet-control-geocoder/dist/Control.Geocoder.js"></script>
-<script src="https://unpkg.com/leaflet-compass/dist/leaflet-compass.min.js"></script>
+<div id="panel">
+  <b>ナビゲーション</b><br><br>
+
+  目的地
+  <input id="dest" placeholder="例: ゆめシティ">
+
+  <button onclick="startRoute()">ルート開始</button>
+</div>
+
+<div id="map"></div>
+<div id="locBtn" onclick="goToMe()">📍</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
-const map = L.map('map', { zoomControl:false }).setView([35.681236,139.767125], 15);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'&copy; OpenStreetMap contributors'
+const map = L.map('map').setView([33.88, 130.88], 15);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19
 }).addTo(map);
-L.control.zoom({ position:'bottomright' }).addTo(map);
 
-// ===== 現在地マーク =====
-const currentMarker = L.marker([0,0]).addTo(map);
-map.locate({ setView:true, watch:true, maxZoom:18 });
+let routeLine = null;
+let currentPos = null;
+let routeCoords = [];
 
-// ===== ルート管理 =====
-let control = null;
+/* ===== 現在地取得 ===== */
+navigator.geolocation.watchPosition(pos => {
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
 
-// 案内テキスト更新
-function updateDirections(routes){
-  const container = document.getElementById('directions');
-  container.innerHTML = '';
-  if(!routes || routes.length===0) return;
-  const steps = routes[0].instructions;
-  steps.forEach(s=>{
-    const p = document.createElement('p');
-    p.textContent = `${s.text} (${Math.round(s.distance)}m)`;
-    container.appendChild(p);
-  });
-}
+  currentPos = [lat, lon];
 
-// ルート検索
-function routeTo(destLatLng){
-  if(control) map.removeControl(control);
-  control = L.Routing.control({
-    waypoints:[currentMarker.getLatLng(), destLatLng],
-    routeWhileDragging:true,
-    router: L.Routing.osrmv1({ language:'ja' }),
-    geocoder: L.Control.Geocoder.nominatim(),
-    createMarker:()=>null
-  }).addTo(map);
+  if (!window.meMarker) {
+    window.meMarker = L.marker(currentPos).addTo(map);
+  } else {
+    window.meMarker.setLatLng(currentPos);
+  }
 
-  control.on('routesfound', e => {
-    const routes = e.routes[0].instructions ? [e.routes[0]] : e.routes;
-    updateDirections(routes);
-  });
-}
+  checkOnRoute();
 
-// ===== 検索機能 =====
-document.getElementById('search-btn').onclick = async () => {
-  const query = document.getElementById('search-input').value;
-  if(!query) return alert("目的地を入力してください");
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if(data.length === 0) return alert("見つかりませんでした");
-  const dest = L.latLng(data[0].lat, data[0].lon);
-  routeTo(dest);
-};
-
-// ===== GPS追従 =====
-map.on('locationfound', e => {
-  currentMarker.setLatLng(e.latlng);
-  if(control) control.spliceWaypoints(0,1,e.latlng); // ルート更新
+}, err => console.log(err), {
+  enableHighAccuracy: true
 });
+
+/* ===== ルート開始 ===== */
+async function startRoute() {
+  const dest = document.getElementById("dest").value;
+
+  const geo = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${dest}`);
+  const data = await geo.json();
+
+  if (!data[0]) return alert("見つからない");
+
+  const target = [data[0].lat, data[0].lon];
+
+  createRoute(currentPos, target);
+}
+
+/* ===== ルート作成(OSRM) ===== */
+async function createRoute(start, end) {
+
+  const url = `https://router.project-osrm.org/route/v1/driving/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson&steps=true`;
+
+  const res = await fetch(url);
+  const json = await res.json();
+
+  const route = json.routes[0];
+
+  routeCoords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+
+  if (routeLine) map.removeLayer(routeLine);
+
+  routeLine = L.polyline(routeCoords, {color: "blue", weight: 6}).addTo(map);
+
+  map.fitBounds(routeLine.getBounds());
+
+  updateInstruction(route);
+}
+
+/* ===== ナビ表示 ===== */
+function updateInstruction(route) {
+  const leg = route.legs[0];
+  const step = leg.steps[0];
+
+  document.getElementById("distance").innerText =
+    (step.distance / 1000).toFixed(1) + " km";
+
+  document.getElementById("instruction").innerText =
+    step.maneuver.instruction;
+}
+
+/* ===== ルート上判定 ===== */
+function checkOnRoute() {
+  if (!routeCoords.length || !currentPos) return;
+
+  let minDist = Infinity;
+
+  routeCoords.forEach(p => {
+    const d = distance(currentPos, p);
+    if (d < minDist) minDist = d;
+  });
+
+  // 50m以内ならOK
+  if (minDist > 0.05) {
+    reroute();
+  }
+}
+
+/* ===== リルート ===== */
+function reroute() {
+  if (!routeCoords.length) return;
+
+  const end = routeCoords[routeCoords.length - 1];
+  console.log("リルート");
+  createRoute(currentPos, end);
+}
+
+/* ===== 距離計算(km) ===== */
+function distance(a, b) {
+  const R = 6371;
+  const dLat = (b[0] - a[0]) * Math.PI/180;
+  const dLon = (b[1] - a[1]) * Math.PI/180;
+
+  const lat1 = a[0] * Math.PI/180;
+  const lat2 = b[0] * Math.PI/180;
+
+  const x = Math.sin(dLat/2)**2 +
+    Math.sin(dLon/2)**2 * Math.cos(lat1) * Math.cos(lat2);
+
+  return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+/* ===== 現在地へ ===== */
+function goToMe() {
+  if (currentPos) {
+    map.setView(currentPos, 17);
+  }
+}
 </script>
+
 </body>
 </html>
