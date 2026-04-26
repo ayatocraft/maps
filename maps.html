@@ -587,7 +587,7 @@
                 document.getElementById('nav-distance').textContent = formatDistance(distToTurn);
 
                 const key = `idx_${nextInstrIdx}_dist_${Math.floor(distToTurn/100)}`; 
-               if ((distToTurn < 1510 && distToTurn > 1490) || (distToTurn < 710 && distToTurn > 690 ) || (distToTurn < 310 && distToTurn > 290) || (distToTurn < 110 && distToTurn > 90)) {
+               if ((distToTurn < 2010 && distToTurn > 1990) || (distToTurn < 710 && distToTurn > 690 ) || (distToTurn < 310 && distToTurn > 290) || (distToTurn < 110 && distToTurn > 90)) {
                       if (lastSpokenInstruction !== key) {
                            speak(`およそ${formatDistance(distToTurn)}先、${text}です`);
                            lastSpokenInstruction = key;
